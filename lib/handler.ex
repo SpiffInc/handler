@@ -1,21 +1,26 @@
 defmodule Handler do
   @moduledoc """
-  Documentation for `Handler`.
+  A helper for running functions that might take too long, or use too much memory.
+
+  Handler will run these functions in their own process and "take care of" problematic processes.
   """
 
   alias Handler.{OOM, ProcessExit, Timeout}
 
   @doc """
-  Run a potentially problematic function
+  Run a potentially problematic function in a safe way.
 
   ## Examples
 
       iex> Handler.run(fn -> 1 + 1 end)
       2
+
       iex> Handler.run(fn -> :timer.sleep(200) end, max_ms: 10)
       {:error, %Handler.Timeout{message: "Took more than 10ms to complete"}}
+
       iex> Handler.run(fn -> Enum.map(1..10_000, & &1*100) end, max_heap_bytes: 4096)
       {:error, %Handler.OOM{message: "Process tried to use more than 4096 bytes of memory"}}
+
       iex> Handler.run(fn -> Process.exit(self(), :i_am_ded) end)
       {:error, %Handler.ProcessExit{message: "Process exited with :i_am_ded", reason: :i_am_ded}}
 
