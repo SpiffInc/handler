@@ -14,7 +14,7 @@ Handler.run(fn -> :timer.sleep(61_000) end)
 # => {:error, %Handler.Timeout{message: "process ran for longer than 60000ms"}}
 Handler.run(fn -> load_tons_of_data_into_memory() end)
 # => {:error, %Handler.OOM{message: "process tried to use more than 10485760 bytes of memory"}}
-Handler.run(fn -> Process.exit(:i_am_ded) end)
+Handler.run(fn -> Process.exit(self(), :i_am_ded) end)
 # => {:error, %Handler.ProcessExit{message: "process exited with :i_am_ded"}}
 ```
 
