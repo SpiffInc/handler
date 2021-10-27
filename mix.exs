@@ -29,7 +29,10 @@ defmodule Handler.MixProject do
   end
 
   defp deps do
-    [{:ex_doc, "~> 0.22", only: :dev}]
+    [
+      {:poolboy, "~> 1.5"},
+      {:ex_doc, "~> 0.22", only: :dev}
+    ]
   end
 
   defp package do
