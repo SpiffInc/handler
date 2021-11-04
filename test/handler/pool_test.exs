@@ -46,6 +46,20 @@ defmodule Handler.PoolTest do
     end)
   end
 
+  test "jobs that run too long return a timeout" do
+    config = %Pool{
+      max_workers: 10,
+      max_memory_bytes: 1024 * 1024
+    }
+
+    {:ok, pool} = Pool.start_link(config)
+
+    fun = fn -> :timer.sleep(100) end
+    opts = [max_heap_bytes: 10 * 1024, max_ms: 50]
+
+    assert {:error, %Handler.Timeout{}} = Pool.attempt_work(pool, fun, opts)
+  end
+
   test "pools that are too busy return NoWorkersAvailable" do
     config = %Pool{
       max_workers: 0,
