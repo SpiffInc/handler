@@ -32,12 +32,13 @@ defmodule Handler.Pool do
   end
 
   def handle_info({ref, result}, state) when is_reference(ref) do
-    state = State.result_received(state, ref, result)
+    state = State.send_response(state, ref, result)
     {:noreply, state}
   end
 
   def handle_info({:DOWN, ref, :process, pid, :normal}, state)
       when is_reference(ref) and is_pid(pid) do
+    state = State.cleanup_commitments(state, ref)
     {:noreply, state}
   end
 

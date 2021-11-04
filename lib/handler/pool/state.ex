@@ -22,6 +22,25 @@ defmodule Handler.Pool.State do
 
   @type exception :: %InsufficientMemory{} | %NoWorkersAvailable{}
 
+  @spec cleanup_commitments(t(), reference()) :: t()
+  def cleanup_commitments(state, ref) do
+    %State{workers: workers} = state
+
+    case Map.get(workers, ref) do
+      {bytes_requested, _from} ->
+        workers = Map.delete(workers, ref)
+
+        %{
+          state
+          | workers: workers,
+            running_workers: state.running_workers - 1,
+            bytes_committed: state.bytes_committed - bytes_requested
+        }
+      nil ->
+        raise "Received an un-tracked reference"
+    end
+  end
+
   @spec start_worker(t(), fun, keyword(), GenServer.from()) :: {:ok, t()} | {:reject, exception()}
   def start_worker(state, fun, opts, from) do
     bytes_requested = Handler.max_heap_bytes(opts)
@@ -39,21 +58,14 @@ defmodule Handler.Pool.State do
     end
   end
 
-  @spec result_received(t(), reference(), term) :: t()
-  def result_received(state, ref, result) do
+  @spec send_response(t(), reference(), term) :: t()
+  def send_response(state, ref, result) do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {bytes_requested, from} ->
+      {_bytes_requested, from} ->
         GenServer.reply(from, result)
-        workers = Map.delete(workers, ref)
-
-        %{
-          state
-          | workers: workers,
-            running_workers: state.running_workers - 1,
-            bytes_committed: state.bytes_committed - bytes_requested
-        }
+        state
 
       nil ->
         raise "Received an un-tracked reference"
