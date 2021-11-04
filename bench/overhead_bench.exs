@@ -16,7 +16,7 @@ Benchee.run(
   %{
     "bare function" => fn -> 100 = fun.() end,
     "handled function" => fn -> 100 = Handler.run(fun, opts) end,
-    "pooled function" => fn -> 100 = Pool.attempt_work(pool, fun, opts) end
+    "pooled function" => fn -> 100 = Pool.run(pool, fun, opts) end
   },
   time: 10
 )

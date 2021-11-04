@@ -11,7 +11,7 @@ defmodule Handler.PoolTest do
     {:ok, pool} = Pool.start_link(config)
     fun = fn -> {:ok, self()} end
     opts = [max_heap_bytes: 10 * 1024, max_ms: 100]
-    assert {:ok, worker_pid} = Pool.attempt_work(pool, fun, opts)
+    assert {:ok, worker_pid} = Pool.run(pool, fun, opts)
     assert is_pid(worker_pid)
     assert worker_pid != self()
   end
@@ -33,7 +33,7 @@ defmodule Handler.PoolTest do
 
     Enum.map(1..20, fn _i ->
       Task.async(fn ->
-        Pool.attempt_work(pool, fun, opts)
+        Pool.run(pool, fun, opts)
       end)
     end)
     |> Enum.map(fn task ->
@@ -57,7 +57,7 @@ defmodule Handler.PoolTest do
     fun = fn -> :timer.sleep(100) end
     opts = [max_heap_bytes: 10 * 1024, max_ms: 50]
 
-    assert {:error, %Handler.Timeout{}} = Pool.attempt_work(pool, fun, opts)
+    assert {:error, %Handler.Timeout{}} = Pool.run(pool, fun, opts)
   end
 
   test "pools that are too busy return NoWorkersAvailable" do
@@ -70,7 +70,7 @@ defmodule Handler.PoolTest do
     opts = [max_heap_bytes: 10 * 1024, max_ms: 100]
 
     assert {:reject, %Pool.NoWorkersAvailable{} = exception} =
-             Pool.attempt_work(pool, fn -> "ohai" end, opts)
+             Pool.run(pool, fn -> "ohai" end, opts)
 
     assert exception.message == "No workers available"
   end
@@ -93,7 +93,7 @@ defmodule Handler.PoolTest do
     results =
       Enum.map(1..10_000, fn _i ->
         Task.async(fn ->
-          Pool.attempt_work(pool, fun, opts)
+          Pool.run(pool, fun, opts)
         end)
       end)
       |> Enum.map(fn task ->
@@ -123,7 +123,7 @@ defmodule Handler.PoolTest do
     opts = [max_heap_bytes: 11 * 1024, max_ms: 20]
 
     assert {:reject, %Handler.Pool.InsufficientMemory{}} =
-             Pool.attempt_work(pool, fn -> true end, opts)
+             Pool.run(pool, fn -> true end, opts)
   end
 
   test "InsufficientMemory is returned if a job is requesting too much in combination with other jobs" do
@@ -143,7 +143,7 @@ defmodule Handler.PoolTest do
     results =
       Enum.map(1..200, fn _i ->
         Task.async(fn ->
-          Pool.attempt_work(pool, fun, opts)
+          Pool.run(pool, fun, opts)
         end)
       end)
       |> Enum.map(fn task ->

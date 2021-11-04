@@ -11,8 +11,8 @@ defmodule Handler.Pool do
     GenServer.start_link(Pool, config)
   end
 
-  def attempt_work(pool, fun, opts) do
-    GenServer.call(pool, {:attempt, fun, opts})
+  def run(pool, fun, opts) do
+    GenServer.call(pool, {:run, fun, opts})
   end
 
   def init(%Pool{} = pool) do
@@ -21,7 +21,7 @@ defmodule Handler.Pool do
     {:ok, state}
   end
 
-  def handle_call({:attempt, fun, opts}, from, state) do
+  def handle_call({:run, fun, opts}, from, state) do
     case State.start_worker(state, fun, opts, from) do
       {:ok, state} ->
         {:noreply, state}
