@@ -1,26 +1,26 @@
 defmodule Handler.Pool.State do
   @moduledoc false
   alias __MODULE__
-  alias Handler.Pool.{NoMemoryAvailable, NoWorkersAvailable}
+  alias Handler.Pool.{InsufficientMemory, NoWorkersAvailable}
 
   defstruct running_workers: 0,
-            total_bytes_promised: 0,
+            bytes_committed: 0,
             workers: %{},
             pool: nil
 
   @type t :: %State{
           running_workers: non_neg_integer(),
-          total_bytes_promised: non_neg_integer(),
+          bytes_committed: non_neg_integer(),
           workers: %{
             reference() => {
-              bytes_promised :: non_neg_integer(),
+              bytes_committed :: non_neg_integer(),
               GenServer.from()
             }
           },
           pool: %Handler.Pool{}
         }
 
-  @type exception :: %NoMemoryAvailable{} | %NoWorkersAvailable{}
+  @type exception :: %InsufficientMemory{} | %NoWorkersAvailable{}
 
   @spec start_worker(t(), fun, keyword(), GenServer.from()) :: {:ok, t()} | {:reject, exception()}
   def start_worker(state, fun, opts, from) do
@@ -30,8 +30,8 @@ defmodule Handler.Pool.State do
       state.running_workers >= state.pool.max_workers ->
         {:reject, NoWorkersAvailable.exception(message: "No workers available")}
 
-      state.total_bytes_promised + bytes_requested > state.pool.max_memory_bytes ->
-        {:reject, NoMemoryAvailable.exception(message: "Not enough memory available")}
+      state.bytes_committed + bytes_requested > state.pool.max_memory_bytes ->
+        {:reject, InsufficientMemory.exception(message: "Not enough memory available")}
 
       true ->
         ref = kickoff_new_task(fun, opts)
@@ -52,11 +52,11 @@ defmodule Handler.Pool.State do
           state
           | workers: workers,
             running_workers: state.running_workers - 1,
-            total_bytes_promised: state.total_bytes_promised - bytes_requested
+            bytes_committed: state.bytes_committed - bytes_requested
         }
 
       nil ->
-        raise "Got an unexpected result"
+        raise "Received an un-tracked reference"
     end
   end
 
@@ -76,7 +76,7 @@ defmodule Handler.Pool.State do
       state
       | workers: workers,
         running_workers: state.running_workers + 1,
-        total_bytes_promised: state.total_bytes_promised + bytes_requested
+        bytes_committed: state.bytes_committed + bytes_requested
     }
   end
 end

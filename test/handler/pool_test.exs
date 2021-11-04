@@ -99,7 +99,7 @@ defmodule Handler.PoolTest do
            end)
   end
 
-  test "NoMemoryAvailable is returned if a job is requesting too much memory" do
+  test "InsufficientMemory is returned if a job is requesting too much memory" do
     config = %Pool{
       max_workers: 5,
       max_memory_bytes: 10 * 1024
@@ -108,11 +108,11 @@ defmodule Handler.PoolTest do
     {:ok, pool} = Pool.start_link(config)
     opts = [max_heap_bytes: 11 * 1024, max_ms: 20]
 
-    assert {:reject, %Handler.Pool.NoMemoryAvailable{}} =
+    assert {:reject, %Handler.Pool.InsufficientMemory{}} =
              Pool.attempt_work(pool, fn -> true end, opts)
   end
 
-  test "NoMemoryAvaialble is returned if a job is requesting too much in combination with other jobs" do
+  test "InsufficientMemory is returned if a job is requesting too much in combination with other jobs" do
     config = %Pool{
       max_workers: 20,
       max_memory_bytes: 20 * 1024
@@ -143,7 +143,7 @@ defmodule Handler.PoolTest do
     assert Enum.count(groups.reject) >= 100
 
     assert Enum.all?(groups.reject, fn
-             {:reject, %Handler.Pool.NoMemoryAvailable{}} -> true
+             {:reject, %Handler.Pool.InsufficientMemory{}} -> true
              _other -> false
            end)
   end
