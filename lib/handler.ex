@@ -48,12 +48,12 @@ defmodule Handler do
 
   @doc false
   def max_heap_bytes(opts) do
-    Keyword.get(opts, :max_heap_bytes, 1024 * 1024 * 1024)
+    Keyword.get(opts, :max_heap_bytes, 10 * 1024 * 1024)
   end
 
   @doc false
   def max_ms(opts) do
-    Keyword.get(opts, :max_ms, 1_200_000)
+    Keyword.get(opts, :max_ms, 60_000)
   end
 
   defp await_results(%Task{ref: ref, pid: pid} = task, max_ms, max_heap_bytes) do
