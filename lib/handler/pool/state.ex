@@ -41,6 +41,10 @@ defmodule Handler.Pool.State do
     end
   end
 
+  @doc """
+  Try to start a job on a worker from the pool. If there is not enough
+  memory or all the workers are busy, return `{:reject, t:exception()}`.
+  """
   @spec start_worker(t(), fun, keyword(), GenServer.from()) :: {:ok, t()} | {:reject, exception()}
   def start_worker(state, fun, opts, from) do
     bytes_requested = Handler.max_heap_bytes(opts)
@@ -81,7 +85,7 @@ defmodule Handler.Pool.State do
     ref
   end
 
-  defp update_state(%__MODULE__{workers: workers} = state, ref, bytes_requested, from) do
+  defp update_state(%State{workers: workers} = state, ref, bytes_requested, from) do
     workers = Map.put(workers, ref, {bytes_requested, from})
 
     %{
