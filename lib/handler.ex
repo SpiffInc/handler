@@ -26,21 +26,34 @@ defmodule Handler do
 
   """
   def run(fun, opts \\ []) do
-    # default options to 20min and 1GB of RAM
-    max_ms = Keyword.get(opts, :max_ms, 1_200_000)
-    max_heap_bytes = Keyword.get(opts, :max_heap_bytes, 1024 * 1024 * 1024)
-    max_heap_words = div(max_heap_bytes, :erlang.system_info(:wordsize))
+    max_ms = max_ms(opts)
+    max_heap_bytes = max_heap_bytes(opts)
 
     old_trap_exit = Process.flag(:trap_exit, true)
 
     result =
       fun
-      |> kickoff_fun(max_heap_words)
+      |> kickoff_fun(max_heap_bytes)
       |> await_results(max_ms, max_heap_bytes)
 
     Process.flag(:trap_exit, old_trap_exit)
 
     result
+  end
+
+  @doc false
+  def bytes_to_words(max_bytes) when is_integer(max_bytes) do
+    div(max_bytes, :erlang.system_info(:wordsize))
+  end
+
+  @doc false
+  def max_heap_bytes(opts) do
+    Keyword.get(opts, :max_heap_bytes, 10 * 1024 * 1024)
+  end
+
+  @doc false
+  def max_ms(opts) do
+    Keyword.get(opts, :max_ms, 60_000)
   end
 
   defp await_results(%Task{ref: ref, pid: pid} = task, max_ms, max_heap_bytes) do
@@ -72,9 +85,9 @@ defmodule Handler do
     end
   end
 
-  defp kickoff_fun(fun, max_heap_words) do
+  defp kickoff_fun(fun, max_heap_bytes) do
     Task.async(fn ->
-      Process.flag(:max_heap_size, max_heap_words)
+      Process.flag(:max_heap_size, bytes_to_words(max_heap_bytes))
       fun.()
     end)
   end

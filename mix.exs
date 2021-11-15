@@ -29,7 +29,10 @@ defmodule Handler.MixProject do
   end
 
   defp deps do
-    [{:ex_doc, "~> 0.22", only: :dev}]
+    [
+      {:ex_doc, "~> 0.22", only: :dev},
+      {:benchee, "~> 1.0", only: :dev}
+    ]
   end
 
   defp package do
