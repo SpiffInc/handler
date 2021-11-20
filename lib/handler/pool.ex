@@ -1,5 +1,6 @@
 defmodule Handler.Pool do
-  defstruct max_workers: 100,
+  defstruct delegate_to: nil,
+            max_workers: 100,
             max_memory_bytes: 10 * 1024 * 1024 * 1024,
             name: nil
 
@@ -11,8 +12,21 @@ defmodule Handler.Pool do
     GenServer.start_link(Pool, config)
   end
 
+  def async(pool, fun, opts) do
+    GenServer.call(pool, {:run, fun, opts}, 1_000)
+  end
+
+  def await(ref) do
+    receive do
+      {^ref, result} ->
+        result
+    end
+  end
+
   def run(pool, fun, opts) do
-    GenServer.call(pool, {:run, fun, opts})
+    with {:ok, ref} <- async(pool, fun, opts) do
+      await(ref)
+    end
   end
 
   def init(%Pool{} = pool) do
@@ -21,10 +35,10 @@ defmodule Handler.Pool do
     {:ok, state}
   end
 
-  def handle_call({:run, fun, opts}, from, state) do
-    case State.start_worker(state, fun, opts, from) do
-      {:ok, state} ->
-        {:noreply, state}
+  def handle_call({:run, fun, opts}, {pid, _tag}, state) do
+    case State.start_worker(state, fun, opts, pid) do
+      {:ok, state, ref} ->
+        {:reply, {:ok, ref}, state}
 
       {:reject, exception} ->
         {:reply, {:reject, exception}, state}

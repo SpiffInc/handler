@@ -14,7 +14,7 @@ defmodule Handler.Pool.State do
           workers: %{
             reference() => {
               bytes_committed :: non_neg_integer(),
-              GenServer.from()
+              pid()
             }
           },
           pool: %Handler.Pool{}
@@ -46,8 +46,8 @@ defmodule Handler.Pool.State do
   Try to start a job on a worker from the pool. If there is not enough
   memory or all the workers are busy, return `{:reject, t:exception()}`.
   """
-  @spec start_worker(t(), fun, keyword(), GenServer.from()) :: {:ok, t()} | {:reject, exception()}
-  def start_worker(state, fun, opts, from) do
+  @spec start_worker(t(), fun, keyword(), pid()) :: {:ok, t(), reference()} | {:reject, exception()}
+  def start_worker(state, fun, opts, pid) do
     bytes_requested = Handler.max_heap_bytes(opts)
 
     cond do
@@ -59,7 +59,7 @@ defmodule Handler.Pool.State do
 
       true ->
         ref = kickoff_new_task(fun, opts)
-        {:ok, update_state(state, ref, bytes_requested, from)}
+        {:ok, update_state(state, ref, bytes_requested, pid), ref}
     end
   end
 
@@ -68,8 +68,8 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {_bytes_requested, from} ->
-        GenServer.reply(from, result)
+      {_bytes_requested, pid} ->
+        send(pid, {ref, result})
         state
 
       nil ->
@@ -86,8 +86,8 @@ defmodule Handler.Pool.State do
     ref
   end
 
-  defp update_state(%State{workers: workers} = state, ref, bytes_requested, from) do
-    workers = Map.put(workers, ref, {bytes_requested, from})
+  defp update_state(%State{workers: workers} = state, ref, bytes_requested, pid) do
+    workers = Map.put(workers, ref, {bytes_requested, pid})
 
     %{
       state
