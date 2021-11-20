@@ -1,6 +1,7 @@
 defmodule Handler.Pool.State do
   @moduledoc false
   alias __MODULE__
+  alias Handler.Pool
   alias Handler.Pool.{InsufficientMemory, NoWorkersAvailable}
 
   defstruct running_workers: 0,
@@ -50,16 +51,10 @@ defmodule Handler.Pool.State do
   def start_worker(state, fun, opts, pid) do
     bytes_requested = Handler.max_heap_bytes(opts)
 
-    cond do
-      state.running_workers >= state.pool.max_workers ->
-        {:reject, NoWorkersAvailable.exception(message: "No workers available")}
-
-      state.bytes_committed + bytes_requested > state.pool.max_memory_bytes ->
-        {:reject, InsufficientMemory.exception(message: "Not enough memory available")}
-
-      true ->
-        ref = kickoff_new_task(fun, opts)
-        {:ok, update_state(state, ref, bytes_requested, pid), ref}
+    with :ok <- check_committed_resources(state, bytes_requested),
+         {:ok, ref} <- kickoff_new_task(state, fun, opts) do
+      new_state = commit_resources(state, ref, bytes_requested, pid)
+      {:ok, new_state, ref}
     end
   end
 
@@ -77,16 +72,20 @@ defmodule Handler.Pool.State do
     end
   end
 
-  defp kickoff_new_task(fun, opts) do
+  defp kickoff_new_task(%State{pool: %Pool{delegate_to: pool}}, fun, opts) when not is_nil(pool) do
+    Pool.async(pool, fun, opts)
+  end
+
+  defp kickoff_new_task(_state, fun, opts) do
     %Task{ref: ref} =
       Task.async(fn ->
         Handler.run(fun, opts)
       end)
 
-    ref
+    {:ok, ref}
   end
 
-  defp update_state(%State{workers: workers} = state, ref, bytes_requested, pid) do
+  defp commit_resources(%State{workers: workers} = state, ref, bytes_requested, pid) do
     workers = Map.put(workers, ref, {bytes_requested, pid})
 
     %{
@@ -95,5 +94,18 @@ defmodule Handler.Pool.State do
         running_workers: state.running_workers + 1,
         bytes_committed: state.bytes_committed + bytes_requested
     }
+  end
+
+  defp check_committed_resources(state, bytes_requested) do
+    cond do
+      state.running_workers >= state.pool.max_workers ->
+        {:reject, NoWorkersAvailable.exception(message: "No workers available")}
+
+      state.bytes_committed + bytes_requested > state.pool.max_memory_bytes ->
+        {:reject, InsufficientMemory.exception(message: "Not enough memory available")}
+
+      true ->
+        :ok
+    end
   end
 end

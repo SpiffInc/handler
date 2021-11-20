@@ -46,8 +46,16 @@ defmodule Handler.Pool do
   end
 
   def handle_info({ref, result}, state) when is_reference(ref) do
-    state = State.send_response(state, ref, result)
-    {:noreply, state}
+    if delegating_work?(state) do
+      state =
+        State.send_response(state, ref, result)
+        |> State.cleanup_commitments(ref)
+
+      {:noreply, state}
+    else
+      state = State.send_response(state, ref, result)
+      {:noreply, state}
+    end
   end
 
   def handle_info({:DOWN, ref, :process, pid, :normal}, state)
@@ -60,6 +68,10 @@ defmodule Handler.Pool do
     require Logger
     Logger.error("#{__MODULE__} received unexpected message #{inspect(other)}")
     {:noreply, state}
+  end
+
+  defp delegating_work?(%State{} = state) do
+    state.pool.delegate_to != nil
   end
 
   defp register_name(%Pool{name: name}) when is_atom(name) do

@@ -160,4 +160,72 @@ defmodule Handler.PoolTest do
              _other -> false
            end)
   end
+
+  describe "composed pools" do
+    test "jobs successfully delgate to the root pool" do
+      {_root, composed} = setup_composed_pools()
+      opts = [max_heap_bytes: 5 * 1024, max_ms: 20]
+      assert {:ok, 100} = Pool.run(composed, fn -> {:ok, 10 * 10} end, opts)
+    end
+
+    test "resources are marked free from both pools" do
+      {_root, composed} = setup_composed_pools()
+      opts = [max_heap_bytes: 5 * 1024, max_mx: 20]
+      Enum.each(1..100, fn(_) ->
+        assert {:ok, 100} = Pool.run(composed, fn -> {:ok, 10 * 10} end, opts)
+      end)
+    end
+
+    test "memory limits of composed pool are enforced" do
+      {_root, composed} = setup_composed_pools()
+
+      opts = [max_ms: 30, max_heap_bytes: 11 * 1024]
+      {:reject, exception} = Pool.run(composed, fn -> :ok end, opts)
+      assert %Handler.Pool.InsufficientMemory{} = exception
+    end
+
+    test "worker limits of composed pool are enforced" do
+      {_root, composed} = setup_composed_pools()
+
+      opts = [max_ms: 30, max_heap_bytes: 3 * 1024]
+      assert {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(20) end, opts)
+      assert {:reject, exception} = Pool.run(composed, fn -> 10 * 10 end, opts)
+      assert %Handler.Pool.NoWorkersAvailable{} = exception
+    end
+
+    test "memory limits of root pool are enforced" do
+      {root, composed} = setup_composed_pools()
+
+      opts = [max_ms: 200, max_heap_bytes: 12 * 1024]
+      {:ok, _ref} = Pool.async(root, fn -> :timer.sleep(100) end, opts)
+
+      opts = [max_ms: 200, max_heap_bytes: 9 * 1024]
+      {:reject, exception} = Pool.run(composed, fn -> :ok end, opts)
+      assert %Handler.Pool.InsufficientMemory{} = exception
+    end
+
+    test "worker limits of root pool are enforced" do
+      {root, composed} = setup_composed_pools()
+      opts = [max_ms: 200, max_heap_bytes: 5 * 1024]
+      {:ok, _ref} = Pool.async(root, fn -> :timer.sleep(100) end, opts)
+      {:ok, _ref} = Pool.async(root, fn -> :timer.sleep(100) end, opts)
+
+      opts = [max_ms: 30, max_heap_bytes: 3 * 1024]
+      assert {:reject, exception} = Pool.run(composed, fn -> 10 * 10 end, opts)
+      assert %Handler.Pool.NoWorkersAvailable{} = exception
+    end
+  end
+
+  defp setup_composed_pools do
+    {:ok, root} = Pool.start_link(%Pool{
+      max_workers: 2,
+      max_memory_bytes: 20 * 1024
+    })
+    {:ok, customer1} = Pool.start_link(%Pool{
+      max_workers: 1,
+      max_memory_bytes: 10 * 1024,
+      delegate_to: root
+    })
+    {root, customer1}
+  end
 end
