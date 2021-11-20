@@ -121,8 +121,8 @@ defmodule Handler.PoolTest do
 
     {:ok, pool} = Pool.start_link(config)
     opts = [max_heap_bytes: 11 * 1024, max_ms: 20]
-
-    assert {:reject, %Handler.Pool.InsufficientMemory{}} = Pool.run(pool, fn -> true end, opts)
+    assert {:reject, exception} = Pool.run(pool, fn -> true end, opts)
+    assert %Handler.Pool.InsufficientMemory{} = exception
   end
 
   test "InsufficientMemory is returned if a job is requesting too much in combination with other jobs" do
@@ -171,7 +171,8 @@ defmodule Handler.PoolTest do
     test "resources are marked free from both pools" do
       {_root, composed} = setup_composed_pools()
       opts = [max_heap_bytes: 5 * 1024, max_mx: 20]
-      Enum.each(1..100, fn(_) ->
+
+      Enum.each(1..100, fn _ ->
         assert {:ok, 100} = Pool.run(composed, fn -> {:ok, 10 * 10} end, opts)
       end)
     end
@@ -217,15 +218,19 @@ defmodule Handler.PoolTest do
   end
 
   defp setup_composed_pools do
-    {:ok, root} = Pool.start_link(%Pool{
-      max_workers: 2,
-      max_memory_bytes: 20 * 1024
-    })
-    {:ok, customer1} = Pool.start_link(%Pool{
-      max_workers: 1,
-      max_memory_bytes: 10 * 1024,
-      delegate_to: root
-    })
+    {:ok, root} =
+      Pool.start_link(%Pool{
+        max_workers: 2,
+        max_memory_bytes: 20 * 1024
+      })
+
+    {:ok, customer1} =
+      Pool.start_link(%Pool{
+        max_workers: 1,
+        max_memory_bytes: 10 * 1024,
+        delegate_to: root
+      })
+
     {root, customer1}
   end
 end

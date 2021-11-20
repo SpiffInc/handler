@@ -47,7 +47,8 @@ defmodule Handler.Pool.State do
   Try to start a job on a worker from the pool. If there is not enough
   memory or all the workers are busy, return `{:reject, t:exception()}`.
   """
-  @spec start_worker(t(), fun, keyword(), pid()) :: {:ok, t(), reference()} | {:reject, exception()}
+  @spec start_worker(t(), fun, keyword(), pid()) ::
+          {:ok, t(), reference()} | {:reject, exception()}
   def start_worker(state, fun, opts, pid) do
     bytes_requested = Handler.max_heap_bytes(opts)
 
@@ -72,7 +73,8 @@ defmodule Handler.Pool.State do
     end
   end
 
-  defp kickoff_new_task(%State{pool: %Pool{delegate_to: pool}}, fun, opts) when not is_nil(pool) do
+  defp kickoff_new_task(%State{pool: %Pool{delegate_to: pool}}, fun, opts)
+       when not is_nil(pool) do
     Pool.async(pool, fun, opts)
   end
 
