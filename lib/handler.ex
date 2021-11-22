@@ -6,9 +6,11 @@ defmodule Handler do
   """
 
   alias Handler.{OOM, ProcessExit, Timeout}
+  @type opts :: keyword()
+  @type exception :: OOM.t() | ProcessExit.t() | Timeout.t()
 
   @doc """
-  Run a potentially problematic function in a safe way.
+  Run a potentially dangerous function in a safe way.
 
   ## Examples
 
