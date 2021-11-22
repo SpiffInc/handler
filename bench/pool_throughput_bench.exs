@@ -15,12 +15,18 @@ config = %Pool{
 {:ok, pool} = Pool.start_link(config)
 fun = fn -> 10 * 10 end
 opts = [max_heap_bytes: 10 * 1024, max_ms: 100]
+{:ok, composed} = Pool.start_link(%Pool{
+  delegate_to: pool,
+  max_workers: 50,
+  max_memory_bytes: 1024 * 1024
+})
 
 Benchee.run(
   %{
     "bare function" => fn -> 100 = fun.() end,
     "handled function" => fn -> 100 = Handler.run(fun, opts) end,
-    "pooled function" => fn -> 100 = Pool.run(pool, fun, opts) end
+    "pooled function" => fn -> 100 = Pool.run(pool, fun, opts) end,
+    "composed pool" => fn -> 100 = Pool.run(composed, fun, opts) end
   },
   time: 10,
   parallel: 16
