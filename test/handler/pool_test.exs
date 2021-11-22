@@ -16,6 +16,28 @@ defmodule Handler.PoolTest do
     assert worker_pid != self()
   end
 
+  test "pools with registered names" do
+    {:ok, _} = Pool.start_link(%Pool{
+      max_workers: 10,
+      max_memory_bytes: 1024 * 1024,
+      name: :registered_name
+    })
+
+    assert {:ok, 100} = Pool.run(:registered_name, fn -> {:ok, 10 * 10} end, [max_heap_bytes: 3 * 1024])
+  end
+
+  test "pools using Registry" do
+    via_key = {:via, Registry, {Handler.Reg, :pool}}
+    {:ok, _reg} = Registry.start_link(keys: :unique, name: Handler.Reg)
+    {:ok, _} = Pool.start_link(%Pool{
+      max_workers: 10,
+      max_memory_bytes: 1024 * 1024,
+      name: via_key
+    })
+
+    assert {:ok, 100} = Pool.run(via_key, fn -> {:ok, 10 * 10} end, [max_heap_bytes: 3 * 1024])
+  end
+
   test "executing multiple parallel jobs in a pool" do
     config = %Pool{
       max_workers: 20,

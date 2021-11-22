@@ -8,6 +8,11 @@ defmodule Handler.Pool do
   alias Handler.Pool.State
   use GenServer
 
+  def start_link(%Pool{name: name} = config) when not is_nil(name) do
+    opts = [name: name]
+    GenServer.start_link(Pool, config, opts)
+  end
+
   def start_link(%Pool{} = config) do
     GenServer.start_link(Pool, config)
   end
@@ -30,7 +35,6 @@ defmodule Handler.Pool do
   end
 
   def init(%Pool{} = pool) do
-    register_name(pool)
     state = %State{pool: pool}
     {:ok, state}
   end
@@ -72,13 +76,5 @@ defmodule Handler.Pool do
 
   defp delegating_work?(%State{} = state) do
     state.pool.delegate_to != nil
-  end
-
-  defp register_name(%Pool{name: name}) when is_atom(name) do
-    if name == nil do
-      true
-    else
-      Process.register(self(), name)
-    end
   end
 end
