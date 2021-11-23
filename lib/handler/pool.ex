@@ -81,7 +81,7 @@ defmodule Handler.Pool do
     end
   end
 
-  ## GenServer / OTP callsbacks
+  ## GenServer / OTP callbacks
 
   def start_link(%Pool{name: name} = config) when not is_nil(name) do
     opts = [name: name]
