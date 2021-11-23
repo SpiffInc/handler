@@ -36,6 +36,7 @@ defmodule Handler.Pool.State do
             running_workers: state.running_workers - 1,
             bytes_committed: state.bytes_committed - bytes_requested
         }
+
       nil ->
         raise "Received an un-tracked reference"
     end
