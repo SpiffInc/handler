@@ -122,8 +122,7 @@ defmodule Handler.PoolTest do
     {:ok, pool} = Pool.start_link(config)
     opts = [max_heap_bytes: 11 * 1024, max_ms: 20]
 
-    assert {:reject, %Handler.Pool.InsufficientMemory{}} =
-             Pool.run(pool, fn -> true end, opts)
+    assert {:reject, %Handler.Pool.InsufficientMemory{}} = Pool.run(pool, fn -> true end, opts)
   end
 
   test "InsufficientMemory is returned if a job is requesting too much in combination with other jobs" do
