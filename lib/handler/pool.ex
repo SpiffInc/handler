@@ -9,16 +9,14 @@ defmodule Handler.Pool do
   use GenServer
 
   @type t :: %Handler.Pool{
-    delegate_to: nil | name(),
-    max_workers: non_neg_integer(),
-    max_memory_bytes: non_neg_integer(),
-    name: nil | name()
-  }
+          delegate_to: nil | name(),
+          max_workers: non_neg_integer(),
+          max_memory_bytes: non_neg_integer(),
+          name: nil | name()
+        }
   @type name :: GenServer.name()
   @type pool :: GenServer.server()
   @type exception :: Pool.InsufficientMemory.t() | Pool.NoWorkersAvailable.t()
-
-
 
   @moduledoc """
   Manage a pool of resources used to run dangeours functions
@@ -54,7 +52,7 @@ defmodule Handler.Pool do
   a reference you can pass to the `await/1` function, or a reject tuple with an exception describing
   why the function couldn't be started.
   """
-  @spec async(pool(), (-> any()), Handler.opts()) :: {:ok, reference()} | {:reject, exception}
+  @spec async(pool(), (() -> any()), Handler.opts()) :: {:ok, reference()} | {:reject, exception}
   def async(pool, fun, opts) do
     GenServer.call(pool, {:run, fun, opts}, 1_000)
   end
@@ -74,7 +72,8 @@ defmodule Handler.Pool do
   the addition of the `{:reject, t:exception()}` return values when the pool
   does not have enough resources to start a particular function.
   """
-  @spec run(pool(), (-> any()), Handler.opts()) :: any() | {:error, Handler.exception()} | {:reject, exception()}
+  @spec run(pool(), (() -> any()), Handler.opts()) ::
+          any() | {:error, Handler.exception()} | {:reject, exception()}
   def run(pool, fun, opts) do
     with {:ok, ref} <- async(pool, fun, opts) do
       await(ref)
