@@ -1,7 +1,7 @@
 # Handler
 
 Got a function that might get out of hand?
-Let the Handler run it in its own process and it will "take care of" the process if things get too wild.
+Let the Handler run it in its own process and it will "take care of" the process if things get out of hand.
 
 ![handler](handler.png)
 
@@ -25,4 +25,32 @@ You can change these limits by passing the optional second argument.
 # Set 100MB heap limit and 2sec time limit
 Handler.run(fn -> 1 + 1 end, max_heap_bytes: 100 * 1024 * 1024, max_ms: 2_000)
 # => 2
+```
+
+## Pool Limits
+
+You can also use Handler to manage a shared pool of resources. If there are not enough resources available
+to run your function, you'll get back a `{:reject, exception}` value.
+
+First start a supervised pool somewhere in your application tree.
+
+```elixir application.ex
+config = %Handler.Pool{
+  max_workers: 20,
+  max_memory_bytes: 5 * 1024 * 1024 * 1024,
+  name: :my_pool
+}
+
+children = [
+  {Handler.Pool, config}
+]
+
+opts = [strategy: :one_for_one, name: Peg.Supervisor]
+Supervisor.start_link(children, opts)
+```
+
+Now that you have a pool being supervised, you can kick off some where from other parts of your project.
+
+```elixir
+Handler.Pool.run(:my_pool, fn -> danger_will_robinson() end, [max_heap_bytes: 1024 * 1024])
 ```
