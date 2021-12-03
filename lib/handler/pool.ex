@@ -19,7 +19,7 @@ defmodule Handler.Pool do
   @type exception :: Pool.InsufficientMemory.t() | Pool.NoWorkersAvailable.t()
 
   @moduledoc """
-  Manage a pool of resources used to run dangeours functions
+  Manage a pool of resources used to run dangerous functions
 
   The Pool provides both a synchrous interface (`run/3`) as well as an asynchronous
   interface (`async/3` and `await/1`) for running functions.
