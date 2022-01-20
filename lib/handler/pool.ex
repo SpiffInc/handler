@@ -80,6 +80,10 @@ defmodule Handler.Pool do
     end
   end
 
+  def kill(pool, task_id) do
+    GenServer.call(pool, {:kill, task_id})
+  end
+
   ## GenServer / OTP callbacks
 
   def start_link(%Pool{name: name} = config) when not is_nil(name) do
@@ -106,6 +110,11 @@ defmodule Handler.Pool do
       {:reject, exception} ->
         {:reply, {:reject, exception}, state}
     end
+  end
+
+  @impl GenServer
+  def handle_call({:kill, task_id}, _from, state) do
+    {:reply, State.kill_worker(state, task_id), state}
   end
 
   @impl GenServer

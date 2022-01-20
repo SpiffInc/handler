@@ -15,7 +15,8 @@ defmodule Handler.Pool.State do
           workers: %{
             reference() => {
               bytes_committed :: non_neg_integer(),
-              pid()
+              pid(),
+              String.t()
             }
           },
           pool: %Handler.Pool{}
@@ -28,7 +29,7 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {bytes_requested, _from} ->
+      {bytes_requested, _from, _task_id} ->
         workers = Map.delete(workers, ref)
 
         %{
@@ -51,11 +52,28 @@ defmodule Handler.Pool.State do
           {:ok, t(), reference()} | {:reject, exception()}
   def start_worker(state, fun, opts, pid) do
     bytes_requested = Handler.max_heap_bytes(opts)
+    task_id = Keyword.get(opts, :task_id)
 
     with :ok <- check_committed_resources(state, bytes_requested),
          {:ok, ref} <- kickoff_new_task(state, fun, opts) do
-      new_state = commit_resources(state, ref, bytes_requested, pid)
+      new_state = commit_resources(state, ref, bytes_requested, pid, task_id)
       {:ok, new_state, ref}
+    end
+  end
+
+  def kill_worker(state, task_id) do
+    worker =
+      state
+      |> Map.get(:workers)
+      |> Map.values()
+      |> Enum.find(&(elem(&1, 2) == task_id))
+
+    case worker do
+      {_bytes_requested, pid, _task_id} ->
+        Process.exit(pid, :user_killed)
+
+      _ ->
+        {:reject, "No task with given task_id in state"}
     end
   end
 
@@ -64,7 +82,7 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {_bytes_requested, pid} ->
+      {_bytes_requested, pid, _task_id} ->
         send(pid, {ref, result})
         state
 
@@ -87,8 +105,8 @@ defmodule Handler.Pool.State do
     {:ok, ref}
   end
 
-  defp commit_resources(%State{workers: workers} = state, ref, bytes_requested, pid) do
-    workers = Map.put(workers, ref, {bytes_requested, pid})
+  defp commit_resources(%State{workers: workers} = state, ref, bytes_requested, pid, task_id) do
+    workers = Map.put(workers, ref, {bytes_requested, pid, task_id})
 
     %{
       state

@@ -187,6 +187,30 @@ defmodule Handler.PoolTest do
            end)
   end
 
+  test "kills a job by its given task_id" do
+    task_id = "task_1234"
+
+    config = %Pool{
+      max_workers: 5,
+      max_memory_bytes: 1024 * 1024
+    }
+
+    {:ok, pool} = Pool.start_link(config)
+
+    fun = fn ->
+      :timer.sleep(60_000)
+      {:ok, self()}
+    end
+
+    opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, task_id: task_id]
+
+    Task.start(fn -> Pool.run(pool, fun, opts) end)
+
+    :sys.get_state(pool)
+
+    assert true = Pool.kill(pool, task_id)
+  end
+
   describe "composed pools" do
     test "jobs successfully delgate to the root pool" do
       {_root, composed} = setup_composed_pools()
