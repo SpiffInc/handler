@@ -204,15 +204,18 @@ defmodule Handler.PoolTest do
 
     opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, task_id: task_id]
 
-    Task.start(fn -> Pool.run(pool, fun, opts) end)
+    Task.async(fn -> Pool.run(pool, fun, opts) end)
 
+    # ensure pool is done initilizing worker
     :sys.get_state(pool)
 
-    assert true = Pool.kill(pool, task_id)
+    assert {:ok, _ref} = Pool.kill(pool, task_id)
+
+    assert {:reject, "No task with given task_id in state"} = Pool.kill(pool, task_id)
   end
 
   describe "composed pools" do
-    test "jobs successfully delgate to the root pool" do
+    test "jobs successfully delegate to the root pool" do
       {_root, composed} = setup_composed_pools()
       opts = [max_heap_bytes: 5 * 1024, max_ms: 20]
       assert {:ok, 100} = Pool.run(composed, fn -> {:ok, 10 * 10} end, opts)
@@ -220,7 +223,7 @@ defmodule Handler.PoolTest do
 
     test "resources are marked free from both pools" do
       {_root, composed} = setup_composed_pools()
-      opts = [max_heap_bytes: 5 * 1024, max_mx: 20]
+      opts = [max_heap_bytes: 5 * 1024, max_ms: 20]
 
       Enum.each(1..100, fn _ ->
         assert {:ok, 100} = Pool.run(composed, fn -> {:ok, 10 * 10} end, opts)
@@ -264,6 +267,17 @@ defmodule Handler.PoolTest do
       opts = [max_ms: 30, max_heap_bytes: 3 * 1024]
       assert {:reject, exception} = Pool.run(composed, fn -> 10 * 10 end, opts)
       assert %Handler.Pool.NoWorkersAvailable{} = exception
+    end
+
+    test "killing workers in a composed pools" do
+      task_id = "task_1234"
+      {root, composed} = setup_composed_pools()
+
+      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_id: task_id]
+      {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+
+      {:ok, _ref} = Pool.kill(composed, task_id)
+      {:reject, "No task with given task_id in state"} = Pool.kill(composed, task_id)
     end
   end
 

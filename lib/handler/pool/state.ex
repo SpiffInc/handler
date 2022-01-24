@@ -15,8 +15,9 @@ defmodule Handler.Pool.State do
           workers: %{
             reference() => {
               bytes_committed :: non_neg_integer(),
-              pid(),
-              String.t()
+              from_pid :: pid(),
+              task_pid :: pid(),
+              task_unique_name :: String.t()
             }
           },
           pool: %Handler.Pool{}
@@ -29,7 +30,7 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {bytes_requested, _from, _task_id} ->
+      {bytes_requested, _from_pid, _task_pid, _task_id} ->
         workers = Map.delete(workers, ref)
 
         %{
@@ -50,31 +51,38 @@ defmodule Handler.Pool.State do
   """
   @spec start_worker(t(), fun, keyword(), pid()) ::
           {:ok, t(), reference()} | {:reject, exception()}
-  def start_worker(state, fun, opts, pid) do
+  def start_worker(state, fun, opts, from_pid) do
     bytes_requested = Handler.max_heap_bytes(opts)
     task_id = Keyword.get(opts, :task_id)
 
     with :ok <- check_committed_resources(state, bytes_requested),
-         {:ok, ref} <- kickoff_new_task(state, fun, opts) do
-      new_state = commit_resources(state, ref, bytes_requested, pid, task_id)
+         {:ok, ref, task_pid} <- kickoff_new_task(state, fun, opts) do
+      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid, task_id)
       {:ok, new_state, ref}
     end
   end
 
-  def kill_worker(state, task_id) do
-    worker =
-      state
-      |> Map.get(:workers)
-      |> Map.values()
-      |> Enum.find(&(elem(&1, 2) == task_id))
-
-    case worker do
-      {_bytes_requested, pid, _task_id} ->
-        Process.exit(pid, :user_killed)
-
-      _ ->
-        {:reject, "No task with given task_id in state"}
+  def kill_worker(%State{pool: %Pool{delegate_to: pool}} = state, task_id) when not is_nil(pool) do
+    with {:ok, ref} <- Pool.kill(pool, task_id) do
+      {:ok, state, ref}
     end
+  end
+
+  def kill_worker(_state, _task_id = nil), do:
+    {:reject, "Cannot kill task without providing task_id"}
+
+  def kill_worker(state, task_id) do
+    task_not_found = {:reject, "No task with given task_id in state"}
+
+    Enum.reduce_while(state.workers, task_not_found, fn
+      {ref, {_bytes_commited, _from_pid, task_pid, ^task_id}}, _ ->
+        Process.unlink(task_pid)
+        Process.exit(task_pid, :user_killed)
+        {:halt, {:ok, cleanup_commitments(state, ref), ref}}
+
+      _other_worker, _ ->
+        {:cont, task_not_found}
+    end)
   end
 
   @spec send_response(t(), reference(), term) :: t()
@@ -82,8 +90,8 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {_bytes_requested, pid, _task_id} ->
-        send(pid, {ref, result})
+      {_bytes_requested, from_pid, _task_pid, _task_id} ->
+        send(from_pid, {ref, result})
         state
 
       nil ->
@@ -93,20 +101,29 @@ defmodule Handler.Pool.State do
 
   defp kickoff_new_task(%State{pool: %Pool{delegate_to: pool}}, fun, opts)
        when not is_nil(pool) do
-    Pool.async(pool, fun, opts)
+    with {:ok, ref} <- Pool.async(pool, fun, opts) do
+      {:ok, ref, nil}
+    end
   end
 
   defp kickoff_new_task(_state, fun, opts) do
-    %Task{ref: ref} =
+    %Task{ref: ref, pid: pid} =
       Task.async(fn ->
         Handler.run(fun, opts)
       end)
 
-    {:ok, ref}
+    {:ok, ref, pid}
   end
 
-  defp commit_resources(%State{workers: workers} = state, ref, bytes_requested, pid, task_id) do
-    workers = Map.put(workers, ref, {bytes_requested, pid, task_id})
+  defp commit_resources(
+         %State{workers: workers} = state,
+         ref,
+         bytes_requested,
+         from_pid,
+         task_pid,
+         task_id
+       ) do
+    workers = Map.put(workers, ref, {bytes_requested, from_pid, task_pid, task_id})
 
     %{
       state
