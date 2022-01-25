@@ -209,7 +209,7 @@ defmodule Handler.PoolTest do
     # ensure pool is done initilizing worker
     :sys.get_state(pool)
 
-    assert {:ok, _ref} = Pool.kill(pool, task_id)
+    assert :ok = Pool.kill(pool, task_id)
 
     assert {:reject, "No task with given task_id in state"} = Pool.kill(pool, task_id)
   end
@@ -276,8 +276,20 @@ defmodule Handler.PoolTest do
       opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_id: task_id]
       {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
 
-      {:ok, _ref} = Pool.kill(composed, task_id)
+      :ok = Pool.kill(composed, task_id)
       {:reject, "No task with given task_id in state"} = Pool.kill(composed, task_id)
+
+      assert %{workers: %{}} = :sys.get_state(composed)
+      assert %{workers: %{}} = :sys.get_state(root)
+
+      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_id: task_id]
+      {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+
+      :ok = Pool.kill(root, task_id)
+      {:reject, "No task with given task_id in state"} = Pool.kill(root, task_id)
+
+      assert %{workers: %{}} = :sys.get_state(composed)
+      assert %{workers: %{}} = :sys.get_state(root)
     end
   end
 

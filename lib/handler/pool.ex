@@ -115,8 +115,8 @@ defmodule Handler.Pool do
   @impl GenServer
   def handle_call({:kill, task_id}, _from, state) do
     case State.kill_worker(state, task_id) do
-      {:ok, state, ref} ->
-        {:reply, {:ok, ref}, state}
+      {:ok, state} ->
+        {:reply, :ok, state}
 
       {:reject, exception} ->
         {:reply, {:reject, exception}, state}

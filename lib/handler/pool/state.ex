@@ -62,14 +62,15 @@ defmodule Handler.Pool.State do
     end
   end
 
-  def kill_worker(%State{pool: %Pool{delegate_to: pool}} = state, task_id) when not is_nil(pool) do
-    with {:ok, ref} <- Pool.kill(pool, task_id) do
-      {:ok, state, ref}
+  def kill_worker(%State{pool: %Pool{delegate_to: pool}} = state, task_id)
+      when not is_nil(pool) do
+    with :ok <- Pool.kill(pool, task_id) do
+      {:ok, state}
     end
   end
 
-  def kill_worker(_state, _task_id = nil), do:
-    {:reject, "Cannot kill task without providing task_id"}
+  def kill_worker(_state, _task_id = nil),
+    do: {:reject, "Cannot kill task without providing task_id"}
 
   def kill_worker(state, task_id) do
     task_not_found = {:reject, "No task with given task_id in state"}
@@ -78,7 +79,16 @@ defmodule Handler.Pool.State do
       {ref, {_bytes_commited, _from_pid, task_pid, ^task_id}}, _ ->
         Process.unlink(task_pid)
         Process.exit(task_pid, :user_killed)
-        {:halt, {:ok, cleanup_commitments(state, ref), ref}}
+
+        exception =
+          Handler.ProcessExit.exception(message: "User killed the process", reason: :user_killed)
+
+        state =
+          state
+          |> send_response(ref, {:error, exception})
+          |> cleanup_commitments(ref)
+
+        {:halt, {:ok, state}}
 
       _other_worker, _ ->
         {:cont, task_not_found}
