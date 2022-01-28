@@ -17,7 +17,7 @@ defmodule Handler.Pool.State do
               bytes_committed :: non_neg_integer(),
               from_pid :: pid(),
               task_pid :: pid(),
-              task_unique_name :: String.t()
+              task_name :: String.t()
             }
           },
           pool: %Handler.Pool{}
@@ -30,7 +30,7 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {bytes_requested, _from_pid, _task_pid, _task_id} ->
+      {bytes_requested, _from_pid, _task_pid, _task_name} ->
         workers = Map.delete(workers, ref)
 
         %{
@@ -53,46 +53,47 @@ defmodule Handler.Pool.State do
           {:ok, t(), reference()} | {:reject, exception()}
   def start_worker(state, fun, opts, from_pid) do
     bytes_requested = Handler.max_heap_bytes(opts)
-    task_id = Keyword.get(opts, :task_id)
+    task_name = Keyword.get(opts, :task_name)
 
     with :ok <- check_committed_resources(state, bytes_requested),
          {:ok, ref, task_pid} <- kickoff_new_task(state, fun, opts) do
-      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid, task_id)
+      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid, task_name)
       {:ok, new_state, ref}
     end
   end
 
-  def kill_worker(%State{pool: %Pool{delegate_to: pool}} = state, task_id)
+  def kill_worker(%State{pool: %Pool{delegate_to: pool}} = state, task_name)
       when not is_nil(pool) do
-    with :ok <- Pool.kill(pool, task_id) do
-      {:ok, state}
+    if has_worker_named(state, task_name) do
+      {:ok, number_killed} = Pool.kill(pool, task_name)
+      {:ok, number_killed, state}
+    else
+      {:ok, 0, state}
     end
   end
 
-  def kill_worker(_state, _task_id = nil),
-    do: {:reject, "Cannot kill task without providing task_id"}
+  def kill_worker(state, task_name) do
+    {state, number_killed} =
+      Enum.reduce(state.workers, {state, 0}, fn
+        {ref, {_bytes_commited, _from_pid, task_pid, ^task_name}}, {state, number_killed} ->
+          Process.unlink(task_pid)
+          Process.exit(task_pid, :user_killed)
 
-  def kill_worker(state, task_id) do
-    task_not_found = {:reject, "No task with given task_id in state"}
+          exception =
+            Handler.ProcessExit.exception(message: "User killed the process", reason: :user_killed)
 
-    Enum.reduce_while(state.workers, task_not_found, fn
-      {ref, {_bytes_commited, _from_pid, task_pid, ^task_id}}, _ ->
-        Process.unlink(task_pid)
-        Process.exit(task_pid, :user_killed)
+          state =
+            state
+            |> send_response(ref, {:error, exception})
+            |> cleanup_commitments(ref)
 
-        exception =
-          Handler.ProcessExit.exception(message: "User killed the process", reason: :user_killed)
+          {state, number_killed + 1}
 
-        state =
-          state
-          |> send_response(ref, {:error, exception})
-          |> cleanup_commitments(ref)
+        _other_worker, {state, number_killed}  ->
+          {state, number_killed}
+      end)
 
-        {:halt, {:ok, state}}
-
-      _other_worker, _ ->
-        {:cont, task_not_found}
-    end)
+    {:ok, number_killed, state}
   end
 
   @spec send_response(t(), reference(), term) :: t()
@@ -100,7 +101,7 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {_bytes_requested, from_pid, _task_pid, _task_id} ->
+      {_bytes_requested, from_pid, _task_pid, _task_name} ->
         send(from_pid, {ref, result})
         state
 
@@ -131,9 +132,9 @@ defmodule Handler.Pool.State do
          bytes_requested,
          from_pid,
          task_pid,
-         task_id
+         task_name
        ) do
-    workers = Map.put(workers, ref, {bytes_requested, from_pid, task_pid, task_id})
+    workers = Map.put(workers, ref, {bytes_requested, from_pid, task_pid, task_name})
 
     %{
       state
@@ -154,5 +155,12 @@ defmodule Handler.Pool.State do
       true ->
         :ok
     end
+  end
+
+  defp has_worker_named(%{workers: workers}, task_name) do
+    Enum.any?(workers, fn
+      {_ref, {_bytes_requested, _from_pid, _task_pid, ^task_name}} -> true
+      _ -> false
+    end)
   end
 end

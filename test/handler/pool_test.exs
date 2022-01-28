@@ -187,8 +187,8 @@ defmodule Handler.PoolTest do
            end)
   end
 
-  test "kills a job by its given task_id" do
-    task_id = "task_1234"
+  test "kills a job by its given task_name" do
+    task_name = "task_1234"
 
     config = %Pool{
       max_workers: 5,
@@ -202,16 +202,15 @@ defmodule Handler.PoolTest do
       {:ok, self()}
     end
 
-    opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, task_id: task_id]
+    opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, task_name: task_name]
 
     Task.async(fn -> Pool.run(pool, fun, opts) end)
 
     # ensure pool is done initilizing worker
     :sys.get_state(pool)
 
-    assert :ok = Pool.kill(pool, task_id)
-
-    assert {:reject, "No task with given task_id in state"} = Pool.kill(pool, task_id)
+    assert {:ok, 1} = Pool.kill(pool, task_name)
+    assert {:ok, 0} = Pool.kill(pool, task_name)
   end
 
   describe "composed pools" do
@@ -270,23 +269,23 @@ defmodule Handler.PoolTest do
     end
 
     test "killing workers in a composed pools" do
-      task_id = "task_1234"
+      task_name = "task_1234"
       {root, composed} = setup_composed_pools()
 
-      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_id: task_id]
+      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_name: task_name]
       {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
 
-      :ok = Pool.kill(composed, task_id)
-      {:reject, "No task with given task_id in state"} = Pool.kill(composed, task_id)
+      {:ok, 1} = Pool.kill(composed, task_name)
+      {:ok, 0} = Pool.kill(composed, task_name)
 
       assert %{workers: %{}} = :sys.get_state(composed)
       assert %{workers: %{}} = :sys.get_state(root)
 
-      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_id: task_id]
+      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_name: task_name]
       {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
 
-      :ok = Pool.kill(root, task_id)
-      {:reject, "No task with given task_id in state"} = Pool.kill(root, task_id)
+      {:ok, 1} = Pool.kill(root, task_name)
+      {:ok, 0} = Pool.kill(root, task_name)
 
       assert %{workers: %{}} = :sys.get_state(composed)
       assert %{workers: %{}} = :sys.get_state(root)
