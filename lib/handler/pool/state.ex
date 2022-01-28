@@ -80,7 +80,10 @@ defmodule Handler.Pool.State do
           Process.exit(task_pid, :user_killed)
 
           exception =
-            Handler.ProcessExit.exception(message: "User killed the process", reason: :user_killed)
+            Handler.ProcessExit.exception(
+              message: "User killed the process",
+              reason: :user_killed
+            )
 
           state =
             state
@@ -89,7 +92,7 @@ defmodule Handler.Pool.State do
 
           {state, number_killed + 1}
 
-        _other_worker, {state, number_killed}  ->
+        _other_worker, {state, number_killed} ->
           {state, number_killed}
       end)
 
