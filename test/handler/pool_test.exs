@@ -204,10 +204,15 @@ defmodule Handler.PoolTest do
 
     opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, task_name: task_name]
 
-    task = Task.async(fn ->
-      assert {:error, error} = Pool.run(pool, fun, opts)
-      assert error == %Handler.ProcessExit{message: "User killed the process", reason: :user_killed}
-    end)
+    task =
+      Task.async(fn ->
+        assert {:error, error} = Pool.run(pool, fun, opts)
+
+        assert error == %Handler.ProcessExit{
+                 message: "User killed the process",
+                 reason: :user_killed
+               }
+      end)
 
     # ensure pool is done initilizing worker
     :sys.get_state(pool)
