@@ -80,6 +80,13 @@ defmodule Handler.Pool do
     end
   end
 
+  def kill(_pool, nil),
+    do: {:reject, "Cannot kill task without providing task_name"}
+
+  def kill(pool, task_name) do
+    GenServer.call(pool, {:kill, task_name})
+  end
+
   ## GenServer / OTP callbacks
 
   def start_link(%Pool{name: name} = config) when not is_nil(name) do
@@ -98,14 +105,21 @@ defmodule Handler.Pool do
   end
 
   @impl GenServer
-  def handle_call({:run, fun, opts}, {pid, _tag}, state) do
-    case State.start_worker(state, fun, opts, pid) do
+  def handle_call({:run, fun, opts}, {from_pid, _tag}, state) do
+    case State.start_worker(state, fun, opts, from_pid) do
       {:ok, state, ref} ->
         {:reply, {:ok, ref}, state}
 
       {:reject, exception} ->
         {:reply, {:reject, exception}, state}
     end
+  end
+
+  @impl GenServer
+
+  def handle_call({:kill, task_name}, _from, state) do
+    {:ok, number_killed, state} = State.kill_worker(state, task_name)
+    {:reply, {:ok, number_killed}, state}
   end
 
   @impl GenServer

@@ -187,8 +187,44 @@ defmodule Handler.PoolTest do
            end)
   end
 
+  test "kills a job by its given task_name" do
+    task_name = "task_1234"
+
+    config = %Pool{
+      max_workers: 5,
+      max_memory_bytes: 1024 * 1024
+    }
+
+    {:ok, pool} = Pool.start_link(config)
+
+    fun = fn ->
+      :timer.sleep(60_000)
+      {:ok, self()}
+    end
+
+    opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, task_name: task_name]
+
+    task =
+      Task.async(fn ->
+        assert {:error, error} = Pool.run(pool, fun, opts)
+
+        assert error == %Handler.ProcessExit{
+                 message: "User killed the process",
+                 reason: :user_killed
+               }
+      end)
+
+    # ensure pool is done initilizing worker
+    :sys.get_state(pool)
+
+    assert {:ok, 1} = Pool.kill(pool, task_name)
+    assert {:ok, 0} = Pool.kill(pool, task_name)
+
+    Task.await(task)
+  end
+
   describe "composed pools" do
-    test "jobs successfully delgate to the root pool" do
+    test "jobs successfully delegate to the root pool" do
       {_root, composed} = setup_composed_pools()
       opts = [max_heap_bytes: 5 * 1024, max_ms: 20]
       assert {:ok, 100} = Pool.run(composed, fn -> {:ok, 10 * 10} end, opts)
@@ -196,7 +232,7 @@ defmodule Handler.PoolTest do
 
     test "resources are marked free from both pools" do
       {_root, composed} = setup_composed_pools()
-      opts = [max_heap_bytes: 5 * 1024, max_mx: 20]
+      opts = [max_heap_bytes: 5 * 1024, max_ms: 20]
 
       Enum.each(1..100, fn _ ->
         assert {:ok, 100} = Pool.run(composed, fn -> {:ok, 10 * 10} end, opts)
@@ -240,6 +276,29 @@ defmodule Handler.PoolTest do
       opts = [max_ms: 30, max_heap_bytes: 3 * 1024]
       assert {:reject, exception} = Pool.run(composed, fn -> 10 * 10 end, opts)
       assert %Handler.Pool.NoWorkersAvailable{} = exception
+    end
+
+    test "killing workers in a composed pools" do
+      task_name = "task_1234"
+      {root, composed} = setup_composed_pools()
+
+      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_name: task_name]
+      {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+
+      {:ok, 1} = Pool.kill(composed, task_name)
+      {:ok, 0} = Pool.kill(composed, task_name)
+
+      assert %{workers: %{}} = :sys.get_state(composed)
+      assert %{workers: %{}} = :sys.get_state(root)
+
+      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_name: task_name]
+      {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+
+      {:ok, 1} = Pool.kill(root, task_name)
+      {:ok, 0} = Pool.kill(root, task_name)
+
+      assert %{workers: %{}} = :sys.get_state(composed)
+      assert %{workers: %{}} = :sys.get_state(root)
     end
   end
 

@@ -15,7 +15,9 @@ defmodule Handler.Pool.State do
           workers: %{
             reference() => {
               bytes_committed :: non_neg_integer(),
-              pid()
+              from_pid :: pid(),
+              task_pid :: pid(),
+              task_name :: String.t()
             }
           },
           pool: %Handler.Pool{}
@@ -28,7 +30,7 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {bytes_requested, _from} ->
+      {bytes_requested, _from_pid, _task_pid, _task_name} ->
         workers = Map.delete(workers, ref)
 
         %{
@@ -49,14 +51,52 @@ defmodule Handler.Pool.State do
   """
   @spec start_worker(t(), fun, keyword(), pid()) ::
           {:ok, t(), reference()} | {:reject, exception()}
-  def start_worker(state, fun, opts, pid) do
+  def start_worker(state, fun, opts, from_pid) do
     bytes_requested = Handler.max_heap_bytes(opts)
+    task_name = Keyword.get(opts, :task_name)
 
     with :ok <- check_committed_resources(state, bytes_requested),
-         {:ok, ref} <- kickoff_new_task(state, fun, opts) do
-      new_state = commit_resources(state, ref, bytes_requested, pid)
+         {:ok, ref, task_pid} <- kickoff_new_task(state, fun, opts) do
+      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid, task_name)
       {:ok, new_state, ref}
     end
+  end
+
+  def kill_worker(%State{pool: %Pool{delegate_to: pool}} = state, task_name)
+      when not is_nil(pool) do
+    if has_worker_named(state, task_name) do
+      {:ok, number_killed} = Pool.kill(pool, task_name)
+      {:ok, number_killed, state}
+    else
+      {:ok, 0, state}
+    end
+  end
+
+  def kill_worker(state, task_name) do
+    {state, number_killed} =
+      Enum.reduce(state.workers, {state, 0}, fn
+        {ref, {_bytes_commited, _from_pid, task_pid, ^task_name}}, {state, number_killed} ->
+          Process.unlink(task_pid)
+          Process.exit(task_pid, :user_killed)
+
+          exception =
+            Handler.ProcessExit.exception(
+              message: "User killed the process",
+              reason: :user_killed
+            )
+
+          state =
+            state
+            |> send_response(ref, {:error, exception})
+            |> cleanup_commitments(ref)
+
+          {state, number_killed + 1}
+
+        _other_worker, {state, number_killed} ->
+          {state, number_killed}
+      end)
+
+    {:ok, number_killed, state}
   end
 
   @spec send_response(t(), reference(), term) :: t()
@@ -64,8 +104,8 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {_bytes_requested, pid} ->
-        send(pid, {ref, result})
+      {_bytes_requested, from_pid, _task_pid, _task_name} ->
+        send(from_pid, {ref, result})
         state
 
       nil ->
@@ -75,20 +115,29 @@ defmodule Handler.Pool.State do
 
   defp kickoff_new_task(%State{pool: %Pool{delegate_to: pool}}, fun, opts)
        when not is_nil(pool) do
-    Pool.async(pool, fun, opts)
+    with {:ok, ref} <- Pool.async(pool, fun, opts) do
+      {:ok, ref, nil}
+    end
   end
 
   defp kickoff_new_task(_state, fun, opts) do
-    %Task{ref: ref} =
+    %Task{ref: ref, pid: pid} =
       Task.async(fn ->
         Handler.run(fun, opts)
       end)
 
-    {:ok, ref}
+    {:ok, ref, pid}
   end
 
-  defp commit_resources(%State{workers: workers} = state, ref, bytes_requested, pid) do
-    workers = Map.put(workers, ref, {bytes_requested, pid})
+  defp commit_resources(
+         %State{workers: workers} = state,
+         ref,
+         bytes_requested,
+         from_pid,
+         task_pid,
+         task_name
+       ) do
+    workers = Map.put(workers, ref, {bytes_requested, from_pid, task_pid, task_name})
 
     %{
       state
@@ -109,5 +158,12 @@ defmodule Handler.Pool.State do
       true ->
         :ok
     end
+  end
+
+  defp has_worker_named(%{workers: workers}, task_name) do
+    Enum.any?(workers, fn
+      {_ref, {_bytes_requested, _from_pid, _task_pid, ^task_name}} -> true
+      _ -> false
+    end)
   end
 end
