@@ -6,6 +6,7 @@ defmodule Handler do
   """
 
   alias Handler.{OOM, ProcessExit, Timeout}
+  import Handler.Opts
   @type opts :: list(opt())
   @type opt :: {:max_ms, milliseconds()} | {:max_heap_bytes, bytes()}
   @type exception :: OOM.t() | ProcessExit.t() | Timeout.t()
@@ -31,7 +32,7 @@ defmodule Handler do
 
   """
   def run(fun, opts \\ []) do
-    validate_opts!(opts)
+    validate_handler_opts!(opts)
     max_ms = max_ms(opts)
     max_heap_bytes = max_heap_bytes(opts)
 
@@ -45,21 +46,6 @@ defmodule Handler do
     Process.flag(:trap_exit, old_trap_exit)
 
     result
-  end
-
-  @doc false
-  def bytes_to_words(max_bytes) when is_integer(max_bytes) do
-    div(max_bytes, :erlang.system_info(:wordsize))
-  end
-
-  @doc false
-  def max_heap_bytes(opts) do
-    Keyword.get(opts, :max_heap_bytes, 10 * 1024 * 1024)
-  end
-
-  @doc false
-  def max_ms(opts) do
-    Keyword.get(opts, :max_ms, 60_000)
   end
 
   defp await_results(%Task{ref: ref, pid: pid} = task, max_ms, max_heap_bytes) do
@@ -101,19 +87,5 @@ defmodule Handler do
       Process.flag(:max_heap_size, bytes_to_words(max_heap_bytes))
       fun.()
     end)
-  end
-
-  defp validate_opts!([]), do: :ok
-  defp validate_opts!(opts) when is_list(opts) do
-    Enum.each(opts, &validate_opt!/1)
-  end
-  defp validate_opts!(_other) do
-    raise ArgumentError, "Invalid opts provided, not a list"
-  end
-
-  defp validate_opt!({:max_ms, number}) when is_integer(number) and number > 0, do: :ok
-  defp validate_opt!({:max_heap_bytes, number}) when is_integer(number) and number > 0, do: :ok
-  defp validate_opt!(other) do
-    raise ArgumentError, "Invalid option #{inspect(other)}"
   end
 end

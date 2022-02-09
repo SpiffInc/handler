@@ -3,6 +3,7 @@ defmodule Handler.Pool.State do
   alias __MODULE__
   alias Handler.Pool
   alias Handler.Pool.{InsufficientMemory, NoWorkersAvailable}
+  import Handler.Opts
 
   defstruct running_workers: 0,
             bytes_committed: 0,
@@ -52,7 +53,7 @@ defmodule Handler.Pool.State do
   @spec start_worker(t(), fun, keyword(), pid()) ::
           {:ok, t(), reference()} | {:reject, exception()}
   def start_worker(state, fun, opts, from_pid) do
-    bytes_requested = Handler.max_heap_bytes(opts)
+    bytes_requested = max_heap_bytes(opts)
     task_name = Keyword.get(opts, :task_name)
 
     with :ok <- check_committed_resources(state, bytes_requested),
