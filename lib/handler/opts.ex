@@ -46,6 +46,8 @@ defmodule Handler.Opts do
     raise ArgumentError, "Invalid opts provided, not a list"
   end
 
+  defp validate_pool_opt!({:delegate_param, _term}), do: :ok
+
   defp validate_pool_opt!({:max_ms, number}) when is_integer(number) and number > 0, do: :ok
 
   defp validate_pool_opt!({:max_heap_bytes, number}) when is_integer(number) and number > 0,

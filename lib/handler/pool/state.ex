@@ -140,11 +140,32 @@ defmodule Handler.Pool.State do
     end
   end
 
+  defp kickoff_new_task(%State{pool: %Pool{delegate_fun: {mod, fun_name, config}}}, fun, opts, from_pid) do
+    param = Keyword.get(opts, :delegate_param)
+    pools = apply(mod, fun_name, [config, param])
+    acc = {:reject, NoWorkersAvailable.exception(message: "No Pools Available")}
+    Enum.reduce_while(pools, acc, fn(pool, _acc) ->
+      case Pool.async(pool, fun, opts) do
+        {:ok, ref} ->
+          worker = %{
+            bytes_committed: max_heap_bytes(opts),
+            delegated_to: pool,
+            from_pid: from_pid,
+            task_name: task_name(opts)
+          }
+          {:halt, {:ok, ref, worker}}
+
+        {:reject, exception} ->
+          {:cont, {:reject, exception}}
+      end
+    end)
+  end
+
   defp kickoff_new_task(_state, fun, opts, from_pid) do
     %Task{ref: ref, pid: pid} =
       Task.async(fn ->
-        opts = Keyword.drop(opts, [:task_name])
-        Handler.run(fun, opts)
+        task_opts = Keyword.drop(opts, [:delegate_param, :task_name])
+        Handler.run(fun, task_opts)
       end)
 
     worker = %{
