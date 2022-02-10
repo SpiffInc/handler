@@ -327,8 +327,10 @@ defmodule Handler.PoolTest do
       {even_root, odd_root, child} = setup_dynamic_composed_pools()
       fun = fn -> :timer.sleep(10_000) end
 
-      assert {:ok, even_ref} = Pool.async(child, fun, [max_heap_bytes: 10 * 1024, delegate_param: 4])
-      assert {:ok, odd_ref} = Pool.async(child, fun, [max_heap_bytes: 10 * 1024, delegate_param: 5])
+      assert {:ok, even_ref} =
+               Pool.async(child, fun, max_heap_bytes: 10 * 1024, delegate_param: 4)
+
+      assert {:ok, odd_ref} = Pool.async(child, fun, max_heap_bytes: 10 * 1024, delegate_param: 5)
 
       assert %{workers: child_workers} = :sys.get_state(child)
       assert %{workers: even_workers} = :sys.get_state(even_root)
@@ -407,19 +409,24 @@ defmodule Handler.PoolTest do
   end
 
   defp setup_dynamic_composed_pools do
-    {:ok, even_root} = Pool.start_link(%Pool{
-      max_workers: 2,
-      max_memory_bytes: 20 * 1024
-    })
-    {:ok, odd_root} = Pool.start_link(%Pool{
-      max_workers: 2,
-      max_memory_bytes: 20 * 1024
-    })
-    {:ok, child} = Pool.start_link(%Pool{
-      max_workers: 4,
-      max_memory_bytes: 40 * 1024,
-      delegate_fun: {EvenOddBalance, :filter, [even_root, odd_root]}
-    })
+    {:ok, even_root} =
+      Pool.start_link(%Pool{
+        max_workers: 2,
+        max_memory_bytes: 20 * 1024
+      })
+
+    {:ok, odd_root} =
+      Pool.start_link(%Pool{
+        max_workers: 2,
+        max_memory_bytes: 20 * 1024
+      })
+
+    {:ok, child} =
+      Pool.start_link(%Pool{
+        max_workers: 4,
+        max_memory_bytes: 40 * 1024,
+        delegate_fun: {EvenOddBalance, :filter, [even_root, odd_root]}
+      })
 
     {even_root, odd_root, child}
   end

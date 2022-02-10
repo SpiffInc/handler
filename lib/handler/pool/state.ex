@@ -144,7 +144,8 @@ defmodule Handler.Pool.State do
     param = Keyword.get(opts, :delegate_param)
     pools = apply(mod, fun_name, [config, param])
     acc = {:reject, NoWorkersAvailable.exception(message: "No Pools Available")}
-    Enum.reduce_while(pools, acc, fn(pool, _acc) ->
+
+    Enum.reduce_while(pools, acc, fn pool, _acc ->
       case Pool.async(pool, fun, opts) do
         {:ok, ref} ->
           worker = %{
