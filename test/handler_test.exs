@@ -32,6 +32,32 @@ defmodule HandlerTest do
     assert exception.__struct__ == Handler.Timeout
   end
 
+  describe "validating opts" do
+    test "opts that are not a list raise an error" do
+      assert_raise(ArgumentError, fn ->
+        Handler.run(fn -> true end, %{})
+      end)
+    end
+
+    test "an unexpected tuple raises an error" do
+      assert_raise(ArgumentError, fn ->
+        Handler.run(fn -> true end, max_time: 200)
+      end)
+    end
+
+    test "a tuple with an invalid value" do
+      assert_raise(ArgumentError, fn ->
+        Handler.run(fn -> true end, max_ms: "foobar")
+      end)
+    end
+
+    test "a non-tuple in the opts list" do
+      assert_raise(ArgumentError, fn ->
+        Handler.run(fn -> true end, [:hi])
+      end)
+    end
+  end
+
   defp build_big_map do
     Enum.reduce(1..1_000_000, %{}, fn i, map ->
       Map.put(map, i, "string #{i}")

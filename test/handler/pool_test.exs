@@ -302,6 +302,32 @@ defmodule Handler.PoolTest do
     end
   end
 
+  describe "validating opts" do
+    test "opts must be passed as a list" do
+      assert_raise(ArgumentError, fn ->
+        Pool.run(:fake_pool, fn -> true end, false)
+      end)
+    end
+
+    test "an unexpected tuple raises an error" do
+      assert_raise(ArgumentError, fn ->
+        Pool.run(:fake_pool, fn -> true end, max_time: 100)
+      end)
+    end
+
+    test "a tuple with an invalid value raises an error" do
+      assert_raise(ArgumentError, fn ->
+        Pool.run(:fake_pool, fn -> true end, max_heap_bytes: "However much I want")
+      end)
+    end
+
+    test "a non-tuple in the opt list raises and error" do
+      assert_raise(ArgumentError, fn ->
+        Pool.run(:fake_pool, fn -> true end, [nil])
+      end)
+    end
+  end
+
   defp setup_composed_pools do
     {:ok, root} =
       Pool.start_link(%Pool{

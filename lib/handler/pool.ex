@@ -6,6 +6,7 @@ defmodule Handler.Pool do
 
   alias __MODULE__
   alias Handler.Pool.State
+  import Handler.Opts
   use GenServer
 
   @type t :: %Handler.Pool{
@@ -15,6 +16,8 @@ defmodule Handler.Pool do
           name: nil | name()
         }
   @type name :: GenServer.name()
+  @type opts :: list(opt())
+  @type opt :: Handler.opt() | {:task_name, String.t()}
   @type pool :: GenServer.server()
   @type exception :: Pool.InsufficientMemory.t() | Pool.NoWorkersAvailable.t()
 
@@ -52,8 +55,9 @@ defmodule Handler.Pool do
   a reference you can pass to the `await/1` function, or a reject tuple with an exception describing
   why the function couldn't be started.
   """
-  @spec async(pool(), (() -> any()), Handler.opts()) :: {:ok, reference()} | {:reject, exception}
+  @spec async(pool(), (() -> any()), opts()) :: {:ok, reference()} | {:reject, exception}
   def async(pool, fun, opts) do
+    validate_pool_opts!(opts)
     GenServer.call(pool, {:run, fun, opts}, 1_000)
   end
 
@@ -72,9 +76,11 @@ defmodule Handler.Pool do
   the addition of the `{:reject, t:exception()}` return values when the pool
   does not have enough resources to start a particular function.
   """
-  @spec run(pool(), (() -> any()), Handler.opts()) ::
+  @spec run(pool(), (() -> any()), opts()) ::
           any() | {:error, Handler.exception()} | {:reject, exception()}
   def run(pool, fun, opts) do
+    validate_pool_opts!(opts)
+
     with {:ok, ref} <- async(pool, fun, opts) do
       await(ref)
     end
@@ -89,6 +95,7 @@ defmodule Handler.Pool do
 
   ## GenServer / OTP callbacks
 
+  @spec start_link(Handler.Pool.t()) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(%Pool{name: name} = config) when not is_nil(name) do
     opts = [name: name]
     GenServer.start_link(Pool, config, opts)

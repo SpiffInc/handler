@@ -6,8 +6,12 @@ defmodule Handler do
   """
 
   alias Handler.{OOM, ProcessExit, Timeout}
-  @type opts :: keyword()
+  import Handler.Opts
+  @type opts :: list(opt())
+  @type opt :: {:max_ms, milliseconds()} | {:max_heap_bytes, bytes()}
   @type exception :: OOM.t() | ProcessExit.t() | Timeout.t()
+  @type bytes :: non_neg_integer()
+  @type milliseconds :: non_neg_integer()
 
   @doc """
   Run a potentially dangerous function in a safe way.
@@ -28,6 +32,7 @@ defmodule Handler do
 
   """
   def run(fun, opts \\ []) do
+    validate_handler_opts!(opts)
     max_ms = max_ms(opts)
     max_heap_bytes = max_heap_bytes(opts)
 
@@ -41,21 +46,6 @@ defmodule Handler do
     Process.flag(:trap_exit, old_trap_exit)
 
     result
-  end
-
-  @doc false
-  def bytes_to_words(max_bytes) when is_integer(max_bytes) do
-    div(max_bytes, :erlang.system_info(:wordsize))
-  end
-
-  @doc false
-  def max_heap_bytes(opts) do
-    Keyword.get(opts, :max_heap_bytes, 10 * 1024 * 1024)
-  end
-
-  @doc false
-  def max_ms(opts) do
-    Keyword.get(opts, :max_ms, 60_000)
   end
 
   defp await_results(%Task{ref: ref, pid: pid} = task, max_ms, max_heap_bytes) do
