@@ -50,15 +50,14 @@ defmodule Handler.Pool.State do
   Try to start a job on a worker from the pool. If there is not enough
   memory or all the workers are busy, return `{:reject, t:exception()}`.
   """
-  @spec start_worker(t(), fun, keyword(), pid()) ::
+  @spec start_worker(t(), fun, Pool.opts(), pid()) ::
           {:ok, t(), reference()} | {:reject, exception()}
   def start_worker(state, fun, opts, from_pid) do
     bytes_requested = max_heap_bytes(opts)
-    task_name = Keyword.get(opts, :task_name)
 
     with :ok <- check_committed_resources(state, bytes_requested),
          {:ok, ref, task_pid} <- kickoff_new_task(state, fun, opts) do
-      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid, task_name)
+      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid, task_name(opts))
       {:ok, new_state, ref}
     end
   end

@@ -13,6 +13,10 @@ defmodule Handler.Opts do
     Keyword.get(opts, :max_ms, 60_000)
   end
 
+  def task_name(opts) do
+    Keyword.get(opts, :task_name)
+  end
+
   def validate_handler_opts!([]), do: :ok
   def validate_handler_opts!(opts) when is_list(opts) do
     Enum.each(opts, &validate_handler_opt!/1)
