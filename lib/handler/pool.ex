@@ -1,5 +1,6 @@
 defmodule Handler.Pool do
-  defstruct delegate_to: nil,
+  defstruct delegate_fun: nil,
+            delegate_to: nil,
             max_workers: 100,
             max_memory_bytes: 10 * 1024 * 1024 * 1024,
             name: nil
@@ -10,6 +11,7 @@ defmodule Handler.Pool do
   use GenServer
 
   @type t :: %Handler.Pool{
+          delegate_fun: nil | {atom(), atom(), term()},
           delegate_to: nil | name(),
           max_workers: non_neg_integer(),
           max_memory_bytes: non_neg_integer(),
@@ -17,7 +19,7 @@ defmodule Handler.Pool do
         }
   @type name :: GenServer.name()
   @type opts :: list(opt())
-  @type opt :: Handler.opt() | {:task_name, String.t()}
+  @type opt :: Handler.opt() | {:task_name, String.t()} | {:delegate_param, term()}
   @type pool :: GenServer.server()
   @type exception :: Pool.InsufficientMemory.t() | Pool.NoWorkersAvailable.t()
 
