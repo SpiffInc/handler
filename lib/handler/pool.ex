@@ -80,6 +80,7 @@ defmodule Handler.Pool do
           any() | {:error, Handler.exception()} | {:reject, exception()}
   def run(pool, fun, opts) do
     validate_pool_opts!(opts)
+
     with {:ok, ref} <- async(pool, fun, opts) do
       await(ref)
     end

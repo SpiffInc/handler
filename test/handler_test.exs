@@ -41,13 +41,13 @@ defmodule HandlerTest do
 
     test "an unexpected tuple raises an error" do
       assert_raise(ArgumentError, fn ->
-        Handler.run(fn -> true end, [max_time: 200])
+        Handler.run(fn -> true end, max_time: 200)
       end)
     end
 
     test "a tuple with an invalid value" do
       assert_raise(ArgumentError, fn ->
-        Handler.run(fn -> true end, [max_ms: "foobar"])
+        Handler.run(fn -> true end, max_ms: "foobar")
       end)
     end
 

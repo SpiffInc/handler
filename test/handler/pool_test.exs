@@ -311,13 +311,13 @@ defmodule Handler.PoolTest do
 
     test "an unexpected tuple raises an error" do
       assert_raise(ArgumentError, fn ->
-        Pool.run(:fake_pool, fn -> true end, [max_time: 100])
+        Pool.run(:fake_pool, fn -> true end, max_time: 100)
       end)
     end
 
     test "a tuple with an invalid value raises an error" do
       assert_raise(ArgumentError, fn ->
-        Pool.run(:fake_pool, fn -> true end, [max_heap_bytes: "However much I want"])
+        Pool.run(:fake_pool, fn -> true end, max_heap_bytes: "However much I want")
       end)
     end
 

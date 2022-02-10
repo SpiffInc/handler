@@ -18,30 +18,41 @@ defmodule Handler.Opts do
   end
 
   def validate_handler_opts!([]), do: :ok
+
   def validate_handler_opts!(opts) when is_list(opts) do
     Enum.each(opts, &validate_handler_opt!/1)
   end
+
   def validate_handler_opts!(_other) do
     raise ArgumentError, "Invalid opts provided, not a list"
   end
 
   defp validate_handler_opt!({:max_ms, number}) when is_integer(number) and number > 0, do: :ok
-  defp validate_handler_opt!({:max_heap_bytes, number}) when is_integer(number) and number > 0, do: :ok
+
+  defp validate_handler_opt!({:max_heap_bytes, number}) when is_integer(number) and number > 0,
+    do: :ok
+
   defp validate_handler_opt!(other) do
     raise ArgumentError, "Invalid option #{inspect(other)}"
   end
 
   def validate_pool_opts!([]), do: :ok
+
   def validate_pool_opts!(opts) when is_list(opts) do
     Enum.each(opts, &validate_pool_opt!/1)
   end
+
   def validate_pool_opts!(_other) do
     raise ArgumentError, "Invalid opts provided, not a list"
   end
 
   defp validate_pool_opt!({:max_ms, number}) when is_integer(number) and number > 0, do: :ok
-  defp validate_pool_opt!({:max_heap_bytes, number}) when is_integer(number) and number > 0, do: :ok
+
+  defp validate_pool_opt!({:max_heap_bytes, number}) when is_integer(number) and number > 0,
+    do: :ok
+
   defp validate_pool_opt!({:task_name, _name}), do: :ok
+
   defp validate_pool_opt!(other) do
     raise ArgumentError, "Invalid option #{inspect(other)}"
   end

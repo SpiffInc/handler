@@ -54,10 +54,12 @@ defmodule Handler.Pool.State do
           {:ok, t(), reference()} | {:reject, exception()}
   def start_worker(state, fun, opts, from_pid) do
     bytes_requested = max_heap_bytes(opts)
+    name = task_name(opts)
 
     with :ok <- check_committed_resources(state, bytes_requested),
          {:ok, ref, task_pid} <- kickoff_new_task(state, fun, opts) do
-      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid, task_name(opts))
+      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid, name)
+
       {:ok, new_state, ref}
     end
   end
