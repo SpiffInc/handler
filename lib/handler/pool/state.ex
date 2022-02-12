@@ -20,17 +20,17 @@ defmodule Handler.Pool.State do
         }
   @type worker :: local_worker() | delegated_worker()
   @type local_worker :: %{
-    bytes_committed: non_neg_integer(),
-    from_pid: pid(),
-    task_pid: pid(),
-    task_name: String.t() | nil
-  }
+          bytes_committed: non_neg_integer(),
+          from_pid: pid(),
+          task_pid: pid(),
+          task_name: String.t() | nil
+        }
   @type delegated_worker :: %{
-    bytes_committed: non_neg_integer(),
-    delegated_to: Pool.pool(),
-    from_pid: pid(),
-    task_name: String.t() | nil
-  }
+          bytes_committed: non_neg_integer(),
+          delegated_to: Pool.pool(),
+          from_pid: pid(),
+          task_name: String.t() | nil
+        }
 
   @type exception :: %InsufficientMemory{} | %NoWorkersAvailable{}
 
@@ -117,10 +117,11 @@ defmodule Handler.Pool.State do
   end
 
   defp kickoff_new_task(
-    %State{pool: %Pool{delegate_to: pool}},
-    fun,
-    opts,
-    from_pid)
+         %State{pool: %Pool{delegate_to: pool}},
+         fun,
+         opts,
+         from_pid
+       )
        when not is_nil(pool) do
     with {:ok, ref} <- Pool.async(pool, fun, opts) do
       worker = %{
@@ -129,6 +130,7 @@ defmodule Handler.Pool.State do
         from_pid: from_pid,
         task_name: task_name(opts)
       }
+
       {:ok, ref, worker}
     end
   end
@@ -146,6 +148,7 @@ defmodule Handler.Pool.State do
       task_pid: pid,
       task_name: task_name(opts)
     }
+
     {:ok, ref, worker}
   end
 

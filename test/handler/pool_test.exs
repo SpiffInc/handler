@@ -204,10 +204,12 @@ defmodule Handler.PoolTest do
 
     assert {:ok, 1} = Pool.kill(pool, task_name)
     assert {:error, error} = Pool.await(ref)
+
     assert error == %Handler.ProcessExit{
-      message: "User killed the process",
-      reason: :user_killed
-    }
+             message: "User killed the process",
+             reason: :user_killed
+           }
+
     assert %{workers: workers} = :sys.get_state(pool)
     assert Enum.empty?(workers)
     assert {:ok, 0} = Pool.kill(pool, task_name)
@@ -278,7 +280,12 @@ defmodule Handler.PoolTest do
 
       {:ok, 1} = Pool.kill(composed, task_name)
       assert {:error, exception} = Pool.await(ref)
-      assert exception == %Handler.ProcessExit{reason: :user_killed, message: "User killed the process"}
+
+      assert exception == %Handler.ProcessExit{
+               reason: :user_killed,
+               message: "User killed the process"
+             }
+
       {:ok, 0} = Pool.kill(composed, task_name)
 
       assert %{workers: %{}} = :sys.get_state(composed)
@@ -289,7 +296,12 @@ defmodule Handler.PoolTest do
 
       {:ok, 1} = Pool.kill(root, task_name)
       assert {:error, exception} = Pool.await(ref)
-      assert exception == %Handler.ProcessExit{reason: :user_killed, message: "User killed the process"}
+
+      assert exception == %Handler.ProcessExit{
+               reason: :user_killed,
+               message: "User killed the process"
+             }
+
       {:ok, 0} = Pool.kill(root, task_name)
 
       assert %{workers: %{}} = :sys.get_state(composed)
