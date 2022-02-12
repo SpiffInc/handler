@@ -39,14 +39,14 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {bytes_requested, _from_pid, _task_pid, _task_name} ->
+      %{bytes_committed: bytes_committed} ->
         workers = Map.delete(workers, ref)
 
         %{
           state
           | workers: workers,
             running_workers: state.running_workers - 1,
-            bytes_committed: state.bytes_committed - bytes_requested
+            bytes_committed: state.bytes_committed - bytes_committed
         }
 
       nil ->
@@ -64,16 +64,17 @@ defmodule Handler.Pool.State do
     bytes_requested = max_heap_bytes(opts)
 
     with :ok <- check_committed_resources(state, bytes_requested),
-         {:ok, ref, task_pid} <- kickoff_new_task(state, fun, opts) do
-      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid)
+         {:ok, ref, worker} <- kickoff_new_task(state, fun, opts, from_pid) do
+      new_state = commit_resources(state, ref, worker)
       {:ok, new_state, ref}
     end
   end
 
+  @spec kill_worker(t(), String.t()) :: {:ok, t(), non_neg_integer()}
   def kill_worker(state, task_name) do
     Enum.reduce(state.workers, {:ok, state, 0}, fn
       {_ref, %{task_pid: task_pid, task_name: ^task_name}}, {:ok, state, number_killed} ->
-        Process.exit(task_pid, :user_killed)
+        :ok = Process.send(task_pid, {Pool, :user_killed}, [])
         {:ok, state, number_killed + 1}
 
       {ref, %{delegated_to: pool, task_name: ^task_name}}, {:ok, state, number_killed} ->
@@ -96,7 +97,8 @@ defmodule Handler.Pool.State do
         Pool.kill_by_ref(pool, ref)
 
       %{task_pid: pid} ->
-        Process.exit(pid, :user_killed)
+        :ok = Process.send(pid, {Pool, :user_killed}, [])
+        :ok
     end
   end
 
@@ -105,7 +107,7 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {_bytes_requested, from_pid, _task_pid, _task_name} ->
+      %{from_pid: from_pid} ->
         send(from_pid, {ref, result})
         state
 
@@ -118,13 +120,11 @@ defmodule Handler.Pool.State do
     %State{pool: %Pool{delegate_to: pool}},
     fun,
     opts,
-    bytes_requested,
-    from_pid,
-    task_name)
+    from_pid)
        when not is_nil(pool) do
     with {:ok, ref} <- Pool.async(pool, fun, opts) do
       worker = %{
-        bytes_committed: bytes_requested,
+        bytes_committed: max_heap_bytes(opts),
         delegated_to: pool,
         from_pid: from_pid,
         task_name: task_name(opts)
@@ -133,19 +133,15 @@ defmodule Handler.Pool.State do
     end
   end
 
-  defp kickoff_new_task(
-    _state,
-    fun,
-    opts,
-    bytes_requested,
-    from_pid) do
+  defp kickoff_new_task(_state, fun, opts, from_pid) do
     %Task{ref: ref, pid: pid} =
       Task.async(fn ->
+        opts = Keyword.drop(opts, [:task_name])
         Handler.run(fun, opts)
       end)
 
     worker = %{
-      bytes_committed: bytes_requested,
+      bytes_committed: max_heap_bytes(opts),
       from_pid: from_pid,
       task_pid: pid,
       task_name: task_name(opts)
@@ -153,27 +149,14 @@ defmodule Handler.Pool.State do
     {:ok, ref, worker}
   end
 
-  defp commit_resources(
-         %State{workers: workers} = state,
-         state,
-         ref,
-         worker,
-         bytes_requested,
-         from_pid,
-         task_name
-       ) do
-    worker = Map.merge(worker, %{
-      bytes_committed: bytes_requested,
-      from_pid: from_pid,
-      task_name: task_name
-    })
-    workers = Map.put(workers, ref, {bytes_requested, from_pid, task_pid, task_name})
+  defp commit_resources(state, ref, worker) do
+    workers = Map.put(state.workers, ref, worker)
 
     %{
       state
       | workers: workers,
         running_workers: state.running_workers + 1,
-        bytes_committed: state.bytes_committed + bytes_requested
+        bytes_committed: state.bytes_committed + worker.bytes_committed
     }
   end
 

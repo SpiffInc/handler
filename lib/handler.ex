@@ -54,15 +54,16 @@ defmodule Handler do
         Process.demonitor(ref, [:flush])
         result
 
+      {Handler.Pool, :user_killed} ->
+        Process.demonitor(ref, [:flush])
+        Task.shutdown(task, :brutal_kill)
+        message = "User killed the process"
+        {:error, ProcessExit.exception(message: message, reason: :user_killed)}
+
       {:DOWN, ^ref, :process, ^pid, :killed} ->
         Process.demonitor(ref, [:flush])
         message = "Process tried to use more than #{max_heap_bytes} bytes of memory"
         {:error, OOM.exception(message: message)}
-
-      {:DOWN, ^ref, :process, ^pid, :user_killed} ->
-        Process.demonitor(ref, [:flush])
-        message = "User killed the process"
-        {:error, ProcessExit.exception(message: message, reason: :user_killed)}
 
       {:DOWN, ^ref, :process, ^pid, {header, _stacktrace} = reason} ->
         Process.demonitor(ref, [:flush])

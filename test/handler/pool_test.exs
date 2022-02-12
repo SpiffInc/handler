@@ -196,31 +196,21 @@ defmodule Handler.PoolTest do
     }
 
     {:ok, pool} = Pool.start_link(config)
-
-    fun = fn ->
-      :timer.sleep(60_000)
-      {:ok, self()}
-    end
-
+    fun = fn -> :timer.sleep(60_000) end
     opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, task_name: task_name]
+    {:ok, ref} = Pool.async(pool, fun, opts)
 
-    task =
-      Task.async(fn ->
-        assert {:error, error} = Pool.run(pool, fun, opts)
-
-        assert error == %Handler.ProcessExit{
-                 message: "User killed the process",
-                 reason: :user_killed
-               }
-      end)
-
-    # ensure pool is done initilizing worker
     :sys.get_state(pool)
 
     assert {:ok, 1} = Pool.kill(pool, task_name)
+    assert {:error, error} = Pool.await(ref)
+    assert error == %Handler.ProcessExit{
+      message: "User killed the process",
+      reason: :user_killed
+    }
+    assert %{workers: workers} = :sys.get_state(pool)
+    assert Enum.empty?(workers)
     assert {:ok, 0} = Pool.kill(pool, task_name)
-
-    Task.await(task)
   end
 
   describe "composed pools" do
@@ -283,18 +273,23 @@ defmodule Handler.PoolTest do
       {root, composed} = setup_composed_pools()
 
       opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_name: task_name]
-      {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+      {:ok, ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+      :sys.get_state(composed)
 
       {:ok, 1} = Pool.kill(composed, task_name)
+      assert {:error, exception} = Pool.await(ref)
+      assert exception == %Handler.ProcessExit{reason: :user_killed, message: "User killed the process"}
       {:ok, 0} = Pool.kill(composed, task_name)
 
       assert %{workers: %{}} = :sys.get_state(composed)
       assert %{workers: %{}} = :sys.get_state(root)
 
       opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_name: task_name]
-      {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+      {:ok, ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
 
       {:ok, 1} = Pool.kill(root, task_name)
+      assert {:error, exception} = Pool.await(ref)
+      assert exception == %Handler.ProcessExit{reason: :user_killed, message: "User killed the process"}
       {:ok, 0} = Pool.kill(root, task_name)
 
       assert %{workers: %{}} = :sys.get_state(composed)

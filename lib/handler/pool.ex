@@ -126,14 +126,14 @@ defmodule Handler.Pool do
   end
 
   @impl GenServer
-
   def handle_call({:kill, task_name}, _from, state) do
-    {:ok, number_killed, state} = State.kill_worker(state, task_name)
+    {:ok, state, number_killed} = State.kill_worker(state, task_name)
     {:reply, {:ok, number_killed}, state}
   end
 
+  @impl GenServer
   def handle_call({:kill_ref, ref}, _from, state) do
-    result =  State.kill_worker_by_ref(state, ref)
+    result = State.kill_worker_by_ref(state, ref)
     {:reply, result, state}
   end
 
@@ -155,6 +155,13 @@ defmodule Handler.Pool do
   def handle_info({:DOWN, ref, :process, pid, :normal}, state)
       when is_reference(ref) and is_pid(pid) do
     state = State.cleanup_commitments(state, ref)
+    {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_info({:EXIT, pid, :normal}, state) when is_pid(pid) do
+    # tasks that are killed via :user_killed send this message back in
+    # addition to the {:DOWN, ref, :process, pid, :normal} message
     {:noreply, state}
   end
 
