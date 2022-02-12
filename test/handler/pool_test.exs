@@ -325,7 +325,7 @@ defmodule Handler.PoolTest do
 
     test "jobs run in their corresponding root pools" do
       {even_root, odd_root, child} = setup_dynamic_composed_pools()
-      fun = fn -> :timer.sleep(10_000) end
+      fun = fn -> :timer.sleep(100) end
 
       assert {:ok, even_ref} =
                Pool.async(child, fun, max_heap_bytes: 10 * 1024, delegate_param: 4)
@@ -347,6 +347,16 @@ defmodule Handler.PoolTest do
       # odd root has only odd job
       refute Map.has_key?(odd_workers, even_ref)
       assert Map.has_key?(odd_workers, odd_ref)
+
+      assert :ok = Pool.await(even_ref)
+      assert :ok = Pool.await(odd_ref)
+
+      assert %{workers: child_workers} = :sys.get_state(child)
+      assert %{workers: even_workers} = :sys.get_state(even_root)
+      assert %{workers: odd_workers} = :sys.get_state(odd_root)
+      assert child_workers == %{}
+      assert even_workers == %{}
+      assert odd_workers == %{}
     end
 
     test "jobs will attempt all available pools until they find a match" do

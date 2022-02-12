@@ -175,6 +175,6 @@ defmodule Handler.Pool do
   end
 
   defp delegating_work?(%State{} = state) do
-    state.pool.delegate_to != nil
+    state.pool.delegate_to != nil or state.pool.delegate_fun != nil
   end
 end
