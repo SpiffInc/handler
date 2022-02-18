@@ -124,6 +124,7 @@ defmodule Handler.Pool.State do
   defp kickoff_new_task(_state, fun, opts) do
     %Task{ref: ref, pid: pid} =
       Task.async(fn ->
+        opts = Keyword.delete(opts, :task_name)
         Handler.run(fun, opts)
       end)
 
