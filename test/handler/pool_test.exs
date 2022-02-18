@@ -282,16 +282,23 @@ defmodule Handler.PoolTest do
       task_name = "task_1234"
       {root, composed} = setup_composed_pools()
 
-      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_name: task_name]
-      {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+      opts = [max_ms: 3_000, max_heap_bytes: 10 * 1024, task_name: task_name]
+      {:ok, ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+
+      assert %{workers: %{^ref => {_,_,task_pid, _} }} = :sys.get_state(root)
+      assert Process.alive?(task_pid)
 
       {:ok, 1} = Pool.kill(composed, task_name)
+      expected_exception =  %Handler.ProcessExit{message: "User killed the process", reason: :user_killed}
+      {:error, ^expected_exception } = Pool.await(ref)
+
+      refute Process.alive?(task_pid)
       {:ok, 0} = Pool.kill(composed, task_name)
 
       assert %{workers: %{}} = :sys.get_state(composed)
       assert %{workers: %{}} = :sys.get_state(root)
 
-      opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_name: task_name]
+      opts = [max_ms: 3_000, max_heap_bytes: 10 * 1024, task_name: task_name]
       {:ok, _ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
 
       {:ok, 1} = Pool.kill(root, task_name)
