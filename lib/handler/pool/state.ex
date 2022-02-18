@@ -78,8 +78,7 @@ defmodule Handler.Pool.State do
     {state, number_killed} =
       Enum.reduce(state.workers, {state, 0}, fn
         {ref, {_bytes_commited, _from_pid, task_pid, ^task_name}}, {state, number_killed} ->
-          Process.unlink(task_pid)
-          Process.exit(task_pid, :user_killed)
+          Task.shutdown(%Task{ref: ref, pid: task_pid, owner: self()}, :brutal_kill)
 
           exception =
             Handler.ProcessExit.exception(
