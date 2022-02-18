@@ -22,14 +22,14 @@ defmodule Handler.Pool.State do
   @type local_worker :: %{
           bytes_committed: non_neg_integer(),
           from_pid: pid(),
-          task_pid: pid(),
-          task_name: String.t() | nil
+          task_name: String.t() | nil,
+          task_pid: pid()
         }
   @type delegated_worker :: %{
           bytes_committed: non_neg_integer(),
-          delegated_to: Pool.pool(),
           from_pid: pid(),
-          task_name: String.t() | nil
+          task_name: String.t() | nil,
+          delegated_to: Pool.pool()
         }
 
   @type exception :: %InsufficientMemory{} | %NoWorkersAvailable{}
