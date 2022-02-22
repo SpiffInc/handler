@@ -200,7 +200,8 @@ defmodule Handler.PoolTest do
     opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, task_name: task_name]
     {:ok, ref} = Pool.async(pool, fun, opts)
 
-    :sys.get_state(pool)
+    assert %{workers: %{^ref => %{task_pid: task_pid}}} = :sys.get_state(pool)
+    assert Process.alive?(task_pid)
 
     assert {:ok, 1} = Pool.kill(pool, task_name)
     assert {:error, error} = Pool.await(ref)
@@ -209,6 +210,8 @@ defmodule Handler.PoolTest do
              message: "User killed the process",
              reason: :user_killed
            }
+
+    refute Process.alive?(task_pid)
 
     assert %{workers: workers} = :sys.get_state(pool)
     assert Enum.empty?(workers)
@@ -276,7 +279,8 @@ defmodule Handler.PoolTest do
 
       opts = [max_ms: 200, max_heap_bytes: 2 * 1024, task_name: task_name]
       {:ok, ref} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
-      :sys.get_state(composed)
+      assert %{workers: %{^ref => %{task_pid: task_pid}}} = :sys.get_state(root)
+      assert Process.alive?(task_pid)
 
       {:ok, 1} = Pool.kill(composed, task_name)
       assert {:error, exception} = Pool.await(ref)
@@ -285,6 +289,8 @@ defmodule Handler.PoolTest do
                reason: :user_killed,
                message: "User killed the process"
              }
+
+      refute Process.alive?(task_pid)
 
       {:ok, 0} = Pool.kill(composed, task_name)
 

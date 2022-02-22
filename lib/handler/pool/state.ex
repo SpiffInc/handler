@@ -96,8 +96,8 @@ defmodule Handler.Pool.State do
       %{delegated_to: pool} ->
         Pool.kill_by_ref(pool, ref)
 
-      %{task_pid: pid} ->
-        :ok = Process.send(pid, {Pool, :user_killed}, [])
+      %{task_pid: task_pid} ->
+        :ok = Process.send(task_pid, {Pool, :user_killed}, [])
         :ok
     end
   end
