@@ -133,7 +133,7 @@ defmodule Handler.Pool do
 
   @impl GenServer
   def handle_call({:kill_ref, ref}, _from, state) do
-    result = State.kill_worker_by_ref(state, ref)
+    {:ok, state, result} = State.kill_worker_by_ref(state, ref)
     {:reply, result, state}
   end
 

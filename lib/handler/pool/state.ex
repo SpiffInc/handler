@@ -73,8 +73,8 @@ defmodule Handler.Pool.State do
   @spec kill_worker(t(), String.t()) :: {:ok, t(), non_neg_integer()}
   def kill_worker(state, task_name) do
     Enum.reduce(state.workers, {:ok, state, 0}, fn
-      {_ref, %{task_pid: task_pid, task_name: ^task_name}}, {:ok, state, number_killed} ->
-        :ok = Process.send(task_pid, {Pool, :user_killed}, [])
+      {ref, %{task_pid: task_pid, task_name: ^task_name}}, {:ok, state, number_killed} ->
+        state = shutdown_and_cleanup(state, ref, task_pid)
         {:ok, state, number_killed + 1}
 
       {ref, %{delegated_to: pool, task_name: ^task_name}}, {:ok, state, number_killed} ->
@@ -91,14 +91,19 @@ defmodule Handler.Pool.State do
     end)
   end
 
-  def kill_worker_by_ref(%State{workers: workers}, ref) do
+  @spec kill_worker_by_ref(t(), reference()) :: {:ok, t(), :ok | :no_such_worker}
+  def kill_worker_by_ref(%State{workers: workers} = state, ref) do
     case Map.get(workers, ref) do
       %{delegated_to: pool} ->
-        Pool.kill_by_ref(pool, ref)
+        result = Pool.kill_by_ref(pool, ref)
+        {:ok, state, result}
 
       %{task_pid: task_pid} ->
-        :ok = Process.send(task_pid, {Pool, :user_killed}, [])
-        :ok
+        state = shutdown_and_cleanup(state, ref, task_pid)
+        {:ok, state, :ok}
+
+      nil ->
+        {:ok, state, :no_such_worker}
     end
   end
 
@@ -174,5 +179,28 @@ defmodule Handler.Pool.State do
       true ->
         :ok
     end
+  end
+
+  defp shutdown_and_cleanup(state, ref, task_pid) do
+    task = %Task{ref: ref, pid: task_pid, owner: self()}
+
+    result =
+      case Task.shutdown(task, :brutal_kill) do
+        {:ok, task_result} ->
+          task_result
+
+        _ ->
+          exception =
+            Handler.ProcessExit.exception(
+              message: "User killed the process",
+              reason: :user_killed
+            )
+
+          {:error, exception}
+      end
+
+    state
+    |> send_response(ref, result)
+    |> cleanup_commitments(ref)
   end
 end
