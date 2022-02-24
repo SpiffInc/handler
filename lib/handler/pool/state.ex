@@ -14,14 +14,22 @@ defmodule Handler.Pool.State do
           running_workers: non_neg_integer(),
           bytes_committed: non_neg_integer(),
           workers: %{
-            reference() => {
-              bytes_committed :: non_neg_integer(),
-              from_pid :: pid(),
-              task_pid :: pid(),
-              task_name :: String.t()
-            }
+            reference() => worker()
           },
           pool: %Handler.Pool{}
+        }
+  @type worker :: local_worker() | delegated_worker()
+  @type local_worker :: %{
+          bytes_committed: non_neg_integer(),
+          from_pid: pid(),
+          task_name: String.t() | nil,
+          task_pid: pid()
+        }
+  @type delegated_worker :: %{
+          bytes_committed: non_neg_integer(),
+          from_pid: pid(),
+          task_name: String.t() | nil,
+          delegated_to: Pool.pool()
         }
 
   @type exception :: %InsufficientMemory{} | %NoWorkersAvailable{}
@@ -31,14 +39,14 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {bytes_requested, _from_pid, _task_pid, _task_name} ->
+      %{bytes_committed: bytes_committed} ->
         workers = Map.delete(workers, ref)
 
         %{
           state
           | workers: workers,
             running_workers: state.running_workers - 1,
-            bytes_committed: state.bytes_committed - bytes_requested
+            bytes_committed: state.bytes_committed - bytes_committed
         }
 
       nil ->
@@ -54,51 +62,49 @@ defmodule Handler.Pool.State do
           {:ok, t(), reference()} | {:reject, exception()}
   def start_worker(state, fun, opts, from_pid) do
     bytes_requested = max_heap_bytes(opts)
-    name = task_name(opts)
 
     with :ok <- check_committed_resources(state, bytes_requested),
-         {:ok, ref, task_pid} <- kickoff_new_task(state, fun, opts) do
-      new_state = commit_resources(state, ref, bytes_requested, from_pid, task_pid, name)
-
+         {:ok, ref, worker} <- kickoff_new_task(state, fun, opts, from_pid) do
+      new_state = commit_resources(state, ref, worker)
       {:ok, new_state, ref}
     end
   end
 
-  def kill_worker(%State{pool: %Pool{delegate_to: pool}} = state, task_name)
-      when not is_nil(pool) do
-    if has_worker_named(state, task_name) do
-      {:ok, number_killed} = Pool.kill(pool, task_name)
-      {:ok, number_killed, state}
-    else
-      {:ok, 0, state}
-    end
+  @spec kill_worker(t(), String.t()) :: {:ok, t(), non_neg_integer()}
+  def kill_worker(state, task_name) do
+    Enum.reduce(state.workers, {:ok, state, 0}, fn
+      {ref, %{task_pid: task_pid, task_name: ^task_name}}, {:ok, state, number_killed} ->
+        state = shutdown_and_cleanup(state, ref, task_pid)
+        {:ok, state, number_killed + 1}
+
+      {ref, %{delegated_to: pool, task_name: ^task_name}}, {:ok, state, number_killed} ->
+        case Pool.kill_by_ref(pool, ref) do
+          :ok ->
+            {:ok, state, number_killed + 1}
+
+          :no_such_worker ->
+            {:ok, state, number_killed}
+        end
+
+      {_ref, _worker}, {:ok, state, number_killed} ->
+        {:ok, state, number_killed}
+    end)
   end
 
-  def kill_worker(state, task_name) do
-    {state, number_killed} =
-      Enum.reduce(state.workers, {state, 0}, fn
-        {ref, {_bytes_commited, _from_pid, task_pid, ^task_name}}, {state, number_killed} ->
-          Process.unlink(task_pid)
-          Process.exit(task_pid, :user_killed)
+  @spec kill_worker_by_ref(t(), reference()) :: {:ok, t(), :ok | :no_such_worker}
+  def kill_worker_by_ref(%State{workers: workers} = state, ref) do
+    case Map.get(workers, ref) do
+      %{delegated_to: pool} ->
+        result = Pool.kill_by_ref(pool, ref)
+        {:ok, state, result}
 
-          exception =
-            Handler.ProcessExit.exception(
-              message: "User killed the process",
-              reason: :user_killed
-            )
+      %{task_pid: task_pid} ->
+        state = shutdown_and_cleanup(state, ref, task_pid)
+        {:ok, state, :ok}
 
-          state =
-            state
-            |> send_response(ref, {:error, exception})
-            |> cleanup_commitments(ref)
-
-          {state, number_killed + 1}
-
-        _other_worker, {state, number_killed} ->
-          {state, number_killed}
-      end)
-
-    {:ok, number_killed, state}
+      nil ->
+        {:ok, state, :no_such_worker}
+    end
   end
 
   @spec send_response(t(), reference(), term) :: t()
@@ -106,7 +112,7 @@ defmodule Handler.Pool.State do
     %State{workers: workers} = state
 
     case Map.get(workers, ref) do
-      {_bytes_requested, from_pid, _task_pid, _task_name} ->
+      %{from_pid: from_pid} ->
         send(from_pid, {ref, result})
         state
 
@@ -115,37 +121,50 @@ defmodule Handler.Pool.State do
     end
   end
 
-  defp kickoff_new_task(%State{pool: %Pool{delegate_to: pool}}, fun, opts)
+  defp kickoff_new_task(
+         %State{pool: %Pool{delegate_to: pool}},
+         fun,
+         opts,
+         from_pid
+       )
        when not is_nil(pool) do
     with {:ok, ref} <- Pool.async(pool, fun, opts) do
-      {:ok, ref, nil}
+      worker = %{
+        bytes_committed: max_heap_bytes(opts),
+        delegated_to: pool,
+        from_pid: from_pid,
+        task_name: task_name(opts)
+      }
+
+      {:ok, ref, worker}
     end
   end
 
-  defp kickoff_new_task(_state, fun, opts) do
+  defp kickoff_new_task(_state, fun, opts, from_pid) do
     %Task{ref: ref, pid: pid} =
       Task.async(fn ->
+        opts = Keyword.drop(opts, [:task_name])
         Handler.run(fun, opts)
       end)
 
-    {:ok, ref, pid}
+    worker = %{
+      bytes_committed: max_heap_bytes(opts),
+      from_pid: from_pid,
+      task_pid: pid,
+      task_name: task_name(opts)
+    }
+
+    {:ok, ref, worker}
   end
 
-  defp commit_resources(
-         %State{workers: workers} = state,
-         ref,
-         bytes_requested,
-         from_pid,
-         task_pid,
-         task_name
-       ) do
-    workers = Map.put(workers, ref, {bytes_requested, from_pid, task_pid, task_name})
+  defp commit_resources(state, ref, worker) do
+    workers = Map.put(state.workers, ref, worker)
 
     %{
       state
       | workers: workers,
         running_workers: state.running_workers + 1,
-        bytes_committed: state.bytes_committed + bytes_requested
+        bytes_committed: state.bytes_committed + worker.bytes_committed
     }
   end
 
@@ -162,10 +181,26 @@ defmodule Handler.Pool.State do
     end
   end
 
-  defp has_worker_named(%{workers: workers}, task_name) do
-    Enum.any?(workers, fn
-      {_ref, {_bytes_requested, _from_pid, _task_pid, ^task_name}} -> true
-      _ -> false
-    end)
+  defp shutdown_and_cleanup(state, ref, task_pid) do
+    task = %Task{ref: ref, pid: task_pid, owner: self()}
+
+    result =
+      case Task.shutdown(task, :brutal_kill) do
+        {:ok, task_result} ->
+          task_result
+
+        _ ->
+          exception =
+            Handler.ProcessExit.exception(
+              message: "User killed the process",
+              reason: :user_killed
+            )
+
+          {:error, exception}
+      end
+
+    state
+    |> send_response(ref, result)
+    |> cleanup_commitments(ref)
   end
 end

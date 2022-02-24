@@ -86,11 +86,14 @@ defmodule Handler.Pool do
     end
   end
 
-  def kill(_pool, nil),
-    do: {:reject, "Cannot kill task without providing task_name"}
-
-  def kill(pool, task_name) do
+  @spec kill(pool(), String.t()) :: {:ok, integer()}
+  def kill(pool, task_name) when is_binary(task_name) do
     GenServer.call(pool, {:kill, task_name})
+  end
+
+  @spec kill_by_ref(pool(), reference()) :: :ok | :no_such_worker
+  def kill_by_ref(pool, ref) when is_reference(ref) do
+    GenServer.call(pool, {:kill_ref, ref})
   end
 
   ## GenServer / OTP callbacks
@@ -123,10 +126,15 @@ defmodule Handler.Pool do
   end
 
   @impl GenServer
-
   def handle_call({:kill, task_name}, _from, state) do
-    {:ok, number_killed, state} = State.kill_worker(state, task_name)
+    {:ok, state, number_killed} = State.kill_worker(state, task_name)
     {:reply, {:ok, number_killed}, state}
+  end
+
+  @impl GenServer
+  def handle_call({:kill_ref, ref}, _from, state) do
+    {:ok, state, result} = State.kill_worker_by_ref(state, ref)
+    {:reply, result, state}
   end
 
   @impl GenServer
@@ -147,6 +155,13 @@ defmodule Handler.Pool do
   def handle_info({:DOWN, ref, :process, pid, :normal}, state)
       when is_reference(ref) and is_pid(pid) do
     state = State.cleanup_commitments(state, ref)
+    {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_info({:EXIT, pid, :normal}, state) when is_pid(pid) do
+    # tasks that are killed via :user_killed send this message back in
+    # addition to the {:DOWN, ref, :process, pid, :normal} message
     {:noreply, state}
   end
 
