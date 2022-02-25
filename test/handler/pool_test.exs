@@ -315,6 +315,56 @@ defmodule Handler.PoolTest do
     end
   end
 
+  describe "dynamic composed pools" do
+    test "jobs execute in one of the root pools" do
+      {_even_root, _odd_root, child} = setup_dynamic_composed_pools()
+
+      assert :ok = Pool.run(child, fn -> :ok end, max_heap_bytes: 10 * 1024, delegate_param: 2)
+      assert :ok = Pool.run(child, fn -> :ok end, max_heap_bytes: 10 * 1024, delegate_param: 1)
+    end
+
+    test "jobs run in their corresponding root pools" do
+      {even_root, odd_root, child} = setup_dynamic_composed_pools()
+      fun = fn -> :timer.sleep(10_000) end
+
+      assert {:ok, even_ref} =
+               Pool.async(child, fun, max_heap_bytes: 10 * 1024, delegate_param: 4)
+
+      assert {:ok, odd_ref} = Pool.async(child, fun, max_heap_bytes: 10 * 1024, delegate_param: 5)
+
+      assert %{workers: child_workers} = :sys.get_state(child)
+      assert %{workers: even_workers} = :sys.get_state(even_root)
+      assert %{workers: odd_workers} = :sys.get_state(odd_root)
+
+      # child has both jobs
+      assert Map.has_key?(child_workers, even_ref)
+      assert Map.has_key?(child_workers, odd_ref)
+
+      # even root has only even job
+      assert Map.has_key?(even_workers, even_ref)
+      refute Map.has_key?(even_workers, odd_ref)
+
+      # odd root has only odd job
+      refute Map.has_key?(odd_workers, even_ref)
+      assert Map.has_key?(odd_workers, odd_ref)
+    end
+
+    test "jobs will attempt all available pools until they find a match" do
+      {_even_root, _odd_root, child} = setup_dynamic_composed_pools()
+      fun = fn -> :timer.sleep(10_000) end
+      opts = [max_heap_bytes: 10 * 1024, delegate_param: :all]
+
+      # there are 2 root pools each with 20kb of space
+      # so we can start 4 jobs before they are both full
+      assert {:ok, _ref} = Pool.async(child, fun, opts)
+      assert {:ok, _ref} = Pool.async(child, fun, opts)
+      assert {:ok, _ref} = Pool.async(child, fun, opts)
+      assert {:ok, _ref} = Pool.async(child, fun, opts)
+      assert {:reject, exception} = Pool.async(child, fun, opts)
+      assert exception == %Pool.NoWorkersAvailable{message: "No workers available"}
+    end
+  end
+
   describe "validating opts" do
     test "opts must be passed as a list" do
       assert_raise(ArgumentError, fn ->
@@ -339,6 +389,46 @@ defmodule Handler.PoolTest do
         Pool.run(:fake_pool, fn -> true end, [nil])
       end)
     end
+  end
+
+  # This is a simplistic example of dynamically composing pools
+  # we expect two potential parent pools for our config and then
+  # our param will be an integer so we can send them to either the
+  # even or odd parent pool
+  defmodule EvenOddBalance do
+    def filter(pools, :all) do
+      pools
+    end
+
+    def filter([even, odd], param) do
+      case rem(param, 2) do
+        0 -> [even]
+        1 -> [odd]
+      end
+    end
+  end
+
+  defp setup_dynamic_composed_pools do
+    {:ok, even_root} =
+      Pool.start_link(%Pool{
+        max_workers: 2,
+        max_memory_bytes: 20 * 1024
+      })
+
+    {:ok, odd_root} =
+      Pool.start_link(%Pool{
+        max_workers: 2,
+        max_memory_bytes: 20 * 1024
+      })
+
+    {:ok, child} =
+      Pool.start_link(%Pool{
+        max_workers: 4,
+        max_memory_bytes: 40 * 1024,
+        delegate_fun: {EvenOddBalance, :filter, [even_root, odd_root]}
+      })
+
+    {even_root, odd_root, child}
   end
 
   defp setup_composed_pools do
