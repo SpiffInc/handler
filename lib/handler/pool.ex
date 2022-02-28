@@ -11,7 +11,7 @@ defmodule Handler.Pool do
   use GenServer
 
   @type t :: %Handler.Pool{
-          delegate_fun: nil | {atom(), atom(), term()},
+          delegate_fun: nil | {module(), fn_name :: atom(), first_argument :: term()},
           delegate_to: nil | name(),
           max_workers: non_neg_integer(),
           max_memory_bytes: non_neg_integer(),
@@ -63,6 +63,9 @@ defmodule Handler.Pool do
     GenServer.call(pool, {:run, fun, opts}, 1_000)
   end
 
+  @doc """
+  Wait for the result of a job kicked off by async
+  """
   @spec await(reference()) :: any() | {:error, Handler.exception()}
   def await(ref) do
     receive do
@@ -88,11 +91,24 @@ defmodule Handler.Pool do
     end
   end
 
+  @doc """
+  Kill jobs by their `:name`
+
+  When kicking off a job the `:name` option can be set and then later
+  this function can be used to kill any jobs in progress with a `:name`
+  matching the `task_name` of this function.
+  """
   @spec kill(pool(), String.t()) :: {:ok, integer()}
   def kill(pool, task_name) when is_binary(task_name) do
     GenServer.call(pool, {:kill, task_name})
   end
 
+  @doc """
+  Kill a job by its `ref`
+
+  When kicking off a job with the `async/3` function a `ref` is returned
+  and that job can later be killed.
+  """
   @spec kill_by_ref(pool(), reference()) :: :ok | :no_such_worker
   def kill_by_ref(pool, ref) when is_reference(ref) do
     GenServer.call(pool, {:kill_ref, ref})
@@ -175,6 +191,6 @@ defmodule Handler.Pool do
   end
 
   defp delegating_work?(%State{} = state) do
-    state.pool.delegate_to != nil
+    state.pool.delegate_to != nil or state.pool.delegate_fun != nil
   end
 end
