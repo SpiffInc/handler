@@ -514,7 +514,6 @@ defmodule Handler.PoolTest do
     {root, customer1}
   end
 
-
   def user_killed_exception do
     %Handler.ProcessExit{
       reason: :user_killed,

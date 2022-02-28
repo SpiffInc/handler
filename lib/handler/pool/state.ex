@@ -114,6 +114,7 @@ defmodule Handler.Pool.State do
         case kill_worker_by_ref(state, ref) do
           {:ok, state, :ok} ->
             {:ok, state, number_killed + 1}
+
           {:ok, state, :no_such_worker} ->
             {:ok, state, number_killed}
         end

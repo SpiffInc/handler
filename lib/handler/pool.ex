@@ -114,7 +114,7 @@ defmodule Handler.Pool do
     GenServer.call(pool, {:kill_ref, ref})
   end
 
-  @doc "Kill all jobs in a pool and returns the number of killed jobs."
+  @doc "Kill all jobs in a pool. Returns the number of killed jobs."
   @spec flush(pool()) :: {:ok, non_neg_integer()}
   def flush(pool) do
     GenServer.call(pool, :flush)
