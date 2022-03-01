@@ -114,6 +114,12 @@ defmodule Handler.Pool do
     GenServer.call(pool, {:kill_ref, ref})
   end
 
+  @doc "Kill all jobs in a pool. Returns the number of killed jobs."
+  @spec flush(pool()) :: {:ok, non_neg_integer()}
+  def flush(pool) do
+    GenServer.call(pool, :flush)
+  end
+
   ## GenServer / OTP callbacks
 
   @spec start_link(Handler.Pool.t()) :: :ignore | {:error, any} | {:ok, pid}
@@ -153,6 +159,12 @@ defmodule Handler.Pool do
   def handle_call({:kill_ref, ref}, _from, state) do
     {:ok, state, result} = State.kill_worker_by_ref(state, ref)
     {:reply, result, state}
+  end
+
+  @impl GenServer
+  def handle_call(:flush, _from, state) do
+    {:ok, state, number_killed} = State.flush_workers(state)
+    {:reply, {:ok, number_killed}, state}
   end
 
   @impl GenServer

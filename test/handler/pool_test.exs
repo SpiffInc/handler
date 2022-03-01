@@ -218,6 +218,38 @@ defmodule Handler.PoolTest do
     assert {:ok, 0} = Pool.kill(pool, task_name)
   end
 
+  test "flushes all jobs" do
+    config = %Pool{
+      max_workers: 5,
+      max_memory_bytes: 1024 * 1024
+    }
+
+    {:ok, pool} = Pool.start_link(config)
+    fun = fn -> :timer.sleep(60_000) end
+    opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000]
+    {:ok, ref_a} = Pool.async(pool, fun, opts)
+    {:ok, ref_b} = Pool.async(pool, fun, opts)
+
+    pool_state = :sys.get_state(pool)
+    assert %{workers: %{^ref_a => %{task_pid: task_pid_a}}} = pool_state
+    assert %{workers: %{^ref_b => %{task_pid: task_pid_b}}} = pool_state
+    assert Process.alive?(task_pid_a)
+    assert Process.alive?(task_pid_b)
+
+    assert {:ok, 2} = Pool.flush(pool)
+
+    error = user_killed_exception()
+    assert {:error, ^error} = Pool.await(ref_a)
+    assert {:error, ^error} = Pool.await(ref_b)
+
+    refute Process.alive?(task_pid_a)
+    refute Process.alive?(task_pid_b)
+
+    assert %{workers: workers} = :sys.get_state(pool)
+    assert Enum.empty?(workers)
+    assert {:ok, 0} = Pool.flush(pool)
+  end
+
   describe "composed pools" do
     test "jobs successfully delegate to the root pool" do
       {_root, composed} = setup_composed_pools()
@@ -285,11 +317,7 @@ defmodule Handler.PoolTest do
       {:ok, 1} = Pool.kill(composed, task_name)
       assert {:error, exception} = Pool.await(ref)
 
-      assert exception == %Handler.ProcessExit{
-               reason: :user_killed,
-               message: "User killed the process"
-             }
-
+      assert exception == user_killed_exception()
       refute Process.alive?(task_pid)
 
       {:ok, 0} = Pool.kill(composed, task_name)
@@ -303,15 +331,43 @@ defmodule Handler.PoolTest do
       {:ok, 1} = Pool.kill(root, task_name)
       assert {:error, exception} = Pool.await(ref)
 
-      assert exception == %Handler.ProcessExit{
-               reason: :user_killed,
-               message: "User killed the process"
-             }
-
+      assert exception == user_killed_exception()
       {:ok, 0} = Pool.kill(root, task_name)
 
       assert %{workers: %{}} = :sys.get_state(composed)
       assert %{workers: %{}} = :sys.get_state(root)
+    end
+
+    test "flushing workers in a composed pools" do
+      exception = user_killed_exception()
+      {root, composed} = setup_composed_pools()
+
+      opts = [max_ms: 200, max_heap_bytes: 2 * 1024]
+
+      {:ok, ref_a} = Pool.async(composed, fn -> :timer.sleep(60_000) end, opts)
+      assert %{workers: %{^ref_a => %{task_pid: task_pid_a}}} = :sys.get_state(root)
+      assert Process.alive?(task_pid_a)
+
+      {:ok, ref_b} = Pool.async(root, fn -> :timer.sleep(60_000) end, opts)
+      assert %{workers: %{^ref_b => %{task_pid: task_pid_b}}} = :sys.get_state(root)
+      assert Process.alive?(task_pid_b)
+
+      {:ok, 1} = Pool.flush(composed)
+      assert {:error, ^exception} = Pool.await(ref_a)
+      refute Process.alive?(task_pid_a)
+      assert %{workers: %{}} = :sys.get_state(composed)
+
+      {:ok, 0} = Pool.flush(composed)
+
+      assert %{workers: %{^ref_b => %{task_pid: ^task_pid_b}}} = :sys.get_state(root)
+      assert Process.alive?(task_pid_b)
+
+      {:ok, 1} = Pool.flush(root)
+      assert {:error, ^exception} = Pool.await(ref_b)
+      refute Process.alive?(task_pid_b)
+      assert %{workers: %{}} = :sys.get_state(root)
+
+      {:ok, 0} = Pool.flush(composed)
     end
   end
 
@@ -456,5 +512,12 @@ defmodule Handler.PoolTest do
       })
 
     {root, customer1}
+  end
+
+  def user_killed_exception do
+    %Handler.ProcessExit{
+      reason: :user_killed,
+      message: "User killed the process"
+    }
   end
 end

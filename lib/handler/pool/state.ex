@@ -107,6 +107,20 @@ defmodule Handler.Pool.State do
     end
   end
 
+  @spec flush_workers(t()) :: {:ok, t(), non_neg_integer()}
+  def flush_workers(state) do
+    Enum.reduce(state.workers, {:ok, state, 0}, fn
+      {ref, _worker}, {:ok, state, number_killed} ->
+        case kill_worker_by_ref(state, ref) do
+          {:ok, state, :ok} ->
+            {:ok, state, number_killed + 1}
+
+          {:ok, state, :no_such_worker} ->
+            {:ok, state, number_killed}
+        end
+    end)
+  end
+
   @spec send_response(t(), reference(), term) :: t()
   def send_response(state, ref, result) do
     %State{workers: workers} = state
