@@ -23,6 +23,11 @@ defmodule Handler.Pool do
   @type pool :: GenServer.server()
   @type exception :: Pool.InsufficientMemory.t() | Pool.NoWorkersAvailable.t()
 
+  @user_killed_process_exit Handler.ProcessExit.exception(
+                              message: "User killed the process",
+                              reason: :user_killed
+                            )
+
   @moduledoc """
   Manage a pool of resources used to run dangerous functions
 
@@ -97,10 +102,14 @@ defmodule Handler.Pool do
   When kicking off a job the `:name` option can be set and then later
   this function can be used to kill any jobs in progress with a `:name`
   matching the `task_name` of this function.
+
+  The client that kicked off the work will receive an `{:error, exception}`
+  as the result for the job. If you don't pass an exception, you will get back
+  a `Handler.ProcessExit{reason: :user_killed}` by default.
   """
   @spec kill(pool(), String.t()) :: {:ok, integer()}
-  def kill(pool, task_name) when is_binary(task_name) do
-    GenServer.call(pool, {:kill, task_name})
+  def kill(pool, task_name, exception \\ @user_killed_process_exit) when is_binary(task_name) do
+    GenServer.call(pool, {:kill, task_name, exception})
   end
 
   @doc """
@@ -108,16 +117,26 @@ defmodule Handler.Pool do
 
   When kicking off a job with the `async/3` function a `ref` is returned
   and that job can later be killed.
+
+  The client that kicked off the work will receive an `{:error, exception}`
+  as the result for the job. If you don't pass an exception, you will get back
+  a `Handler.ProcessExit{reason: :user_killed}` by default.
   """
   @spec kill_by_ref(pool(), reference()) :: :ok | :no_such_worker
-  def kill_by_ref(pool, ref) when is_reference(ref) do
-    GenServer.call(pool, {:kill_ref, ref})
+  def kill_by_ref(pool, ref, exception \\ @user_killed_process_exit) when is_reference(ref) do
+    GenServer.call(pool, {:kill_ref, ref, exception})
   end
 
-  @doc "Kill all jobs in a pool. Returns the number of killed jobs."
+  @doc """
+  Kill all jobs in a pool. Returns the number of killed jobs.
+
+  The client that kicked off the work will receive an `{:error, exception}`
+  as the result for the job. If you don't pass an exception, you will get back
+  a `Handler.ProcessExit{reason: :user_killed}` by default.
+  """
   @spec flush(pool()) :: {:ok, non_neg_integer()}
-  def flush(pool) do
-    GenServer.call(pool, :flush)
+  def flush(pool, exception \\ @user_killed_process_exit) do
+    GenServer.call(pool, {:flush, exception})
   end
 
   ## GenServer / OTP callbacks
@@ -150,20 +169,20 @@ defmodule Handler.Pool do
   end
 
   @impl GenServer
-  def handle_call({:kill, task_name}, _from, state) do
-    {:ok, state, number_killed} = State.kill_worker(state, task_name)
+  def handle_call({:kill, task_name, exception}, _from, state) do
+    {:ok, state, number_killed} = State.kill_worker(state, task_name, exception)
     {:reply, {:ok, number_killed}, state}
   end
 
   @impl GenServer
-  def handle_call({:kill_ref, ref}, _from, state) do
-    {:ok, state, result} = State.kill_worker_by_ref(state, ref)
+  def handle_call({:kill_ref, ref, exception}, _from, state) do
+    {:ok, state, result} = State.kill_worker_by_ref(state, ref, exception)
     {:reply, result, state}
   end
 
   @impl GenServer
-  def handle_call(:flush, _from, state) do
-    {:ok, state, number_killed} = State.flush_workers(state)
+  def handle_call({:flush, exception}, _from, state) do
+    {:ok, state, number_killed} = State.flush_workers(state, exception)
     {:reply, {:ok, number_killed}, state}
   end
 

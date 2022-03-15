@@ -218,6 +218,31 @@ defmodule Handler.PoolTest do
     assert {:ok, 0} = Pool.kill(pool, task_name)
   end
 
+  test "kills a job by its given task_name with a custom exit reason" do
+    task_name = "task_1234"
+
+    config = %Pool{
+      max_workers: 5,
+      max_memory_bytes: 1024 * 1024
+    }
+
+    {:ok, pool} = Pool.start_link(config)
+    fun = fn -> :timer.sleep(60_000) end
+    opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, task_name: task_name]
+    {:ok, ref} = Pool.async(pool, fun, opts)
+
+    assert %{workers: %{^ref => %{task_pid: task_pid}}} = :sys.get_state(pool)
+    assert Process.alive?(task_pid)
+
+    assert {:ok, 1} = Pool.kill(pool, task_name, :graceful_shutdown)
+    assert {:error, :graceful_shutdown} = Pool.await(ref)
+    refute Process.alive?(task_pid)
+
+    assert %{workers: workers} = :sys.get_state(pool)
+    assert Enum.empty?(workers)
+    assert {:ok, 0} = Pool.kill(pool, task_name)
+  end
+
   test "flushes all jobs" do
     config = %Pool{
       max_workers: 5,
@@ -241,6 +266,37 @@ defmodule Handler.PoolTest do
     error = user_killed_exception()
     assert {:error, ^error} = Pool.await(ref_a)
     assert {:error, ^error} = Pool.await(ref_b)
+
+    refute Process.alive?(task_pid_a)
+    refute Process.alive?(task_pid_b)
+
+    assert %{workers: workers} = :sys.get_state(pool)
+    assert Enum.empty?(workers)
+    assert {:ok, 0} = Pool.flush(pool)
+  end
+
+  test "flushes all jobs with a custom exception" do
+    config = %Pool{
+      max_workers: 5,
+      max_memory_bytes: 1024 * 1024
+    }
+
+    {:ok, pool} = Pool.start_link(config)
+    fun = fn -> :timer.sleep(60_000) end
+    opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000]
+    {:ok, ref_a} = Pool.async(pool, fun, opts)
+    {:ok, ref_b} = Pool.async(pool, fun, opts)
+
+    pool_state = :sys.get_state(pool)
+    assert %{workers: %{^ref_a => %{task_pid: task_pid_a}}} = pool_state
+    assert %{workers: %{^ref_b => %{task_pid: task_pid_b}}} = pool_state
+    assert Process.alive?(task_pid_a)
+    assert Process.alive?(task_pid_b)
+
+    assert {:ok, 2} = Pool.flush(pool, :graceful_shutdown)
+
+    assert {:error, :graceful_shutdown} = Pool.await(ref_a)
+    assert {:error, :graceful_shutdown} = Pool.await(ref_b)
 
     refute Process.alive?(task_pid_a)
     refute Process.alive?(task_pid_b)
