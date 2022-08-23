@@ -6,7 +6,7 @@ defmodule Handler.Pool do
             name: nil
 
   alias __MODULE__
-  alias Handler.Pool.State
+  alias Handler.Pool.{NoWorkersAvailable, State}
   import Handler.Opts
   use GenServer
 
@@ -65,7 +65,13 @@ defmodule Handler.Pool do
   @spec async(pool(), (() -> any()), opts()) :: {:ok, reference()} | {:reject, exception}
   def async(pool, fun, opts) do
     validate_pool_opts!(opts)
-    GenServer.call(pool, {:run, fun, opts}, 1_000)
+
+    try do
+      GenServer.call(pool, {:run, fun, opts}, 1_000)
+    catch
+      :exit, {:noproc, _} ->
+        {:reject, NoWorkersAvailable.exception(message: "Pool not available")}
+    end
   end
 
   @doc """
