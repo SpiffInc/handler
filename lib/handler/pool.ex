@@ -70,7 +70,7 @@ defmodule Handler.Pool do
       GenServer.call(pool, {:run, fun, opts}, 1_000)
     catch
       :exit, {:noproc, _} ->
-        {:reject, NoWorkersAvailable.exception(message: "Pool not available")}
+        {:reject, NoWorkersAvailable.exception(message: "No Pools Available")}
     end
   end
 

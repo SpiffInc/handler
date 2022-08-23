@@ -471,7 +471,7 @@ defmodule Handler.PoolTest do
       assert odd_workers == %{}
     end
 
-    test "jobs will attempt all available pools until they find a match" do
+    test "when available pools are out of resources jobs will attempt all other pools until they find a match" do
       {_even_root, _odd_root, child} = setup_dynamic_composed_pools()
       fun = fn -> :timer.sleep(10_000) end
       opts = [max_heap_bytes: 10 * 1024, delegate_param: :all]
@@ -484,6 +484,45 @@ defmodule Handler.PoolTest do
       assert {:ok, _ref} = Pool.async(child, fun, opts)
       assert {:reject, exception} = Pool.async(child, fun, opts)
       assert exception == %Pool.NoWorkersAvailable{message: "No workers available"}
+    end
+
+    test "when pools are not available will attempt all other pools until they find a match" do
+      dead_root = Process.spawn(fn -> nil end, [])
+
+      {:ok, alive_root} =
+        Pool.start_link(%Pool{
+          max_workers: 2,
+          max_memory_bytes: 20 * 1024
+        })
+
+      {:ok, child} =
+        Pool.start_link(%Pool{
+          max_workers: 4,
+          max_memory_bytes: 40 * 1024,
+          delegate_fun: {Enum, :map, [dead_root, alive_root]}
+        })
+
+      fun = fn -> nil end
+      opts = [max_heap_bytes: 10 * 1024, delegate_param: & &1]
+
+      assert {:ok, _ref} = Pool.async(child, fun, opts)
+    end
+
+    test "when no pools is available will return no pools available error" do
+      dead_root = Process.spawn(fn -> nil end, [])
+
+      {:ok, child} =
+        Pool.start_link(%Pool{
+          max_workers: 4,
+          max_memory_bytes: 40 * 1024,
+          delegate_fun: {Enum, :map, [dead_root]}
+        })
+
+      fun = fn -> nil end
+      opts = [max_heap_bytes: 10 * 1024, delegate_param: & &1]
+
+      assert {:reject, exception} = Pool.async(child, fun, opts)
+      assert exception == %Pool.NoWorkersAvailable{message: "No Pools Available"}
     end
   end
 
