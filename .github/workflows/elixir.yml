@@ -8,6 +8,7 @@ on:
 
 env:
   MIX_ENV: test
+  ImageOS: ubuntu-latest
 
 jobs:
   build:
