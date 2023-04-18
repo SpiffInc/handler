@@ -223,8 +223,9 @@ defmodule Handler.Pool.State do
     end
   end
 
+  @foo_mfa {__MODULE__, :foo, 0}
   defp shutdown_and_cleanup(state, ref, task_pid, exception) do
-    task = %Task{ref: ref, pid: task_pid, owner: self()}
+    task = %Task{mfa: @foo_mfa, ref: ref, pid: task_pid, owner: self()}
 
     result =
       case Task.shutdown(task, :brutal_kill) do
