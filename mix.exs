@@ -8,7 +8,7 @@ defmodule Handler.MixProject do
     [
       app: :handler,
       version: @version,
-      elixir: "~> 1.12",
+      elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       docs: [
