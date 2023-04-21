@@ -23,13 +23,15 @@ defmodule Handler.Pool.State do
           bytes_committed: non_neg_integer(),
           from_pid: pid(),
           task_name: String.t() | nil,
-          task_pid: pid()
+          task_pid: pid(),
+          task: %Task{}
         }
   @type delegated_worker :: %{
           bytes_committed: non_neg_integer(),
           from_pid: pid(),
           task_name: String.t() | nil,
-          delegated_to: Pool.pool()
+          delegated_to: Pool.pool(),
+          task: %Task{}
         }
 
   @type exception :: %InsufficientMemory{} | %NoWorkersAvailable{}
@@ -73,8 +75,8 @@ defmodule Handler.Pool.State do
   @spec kill_worker(t(), String.t(), term()) :: {:ok, t(), non_neg_integer()}
   def kill_worker(state, task_name, exception) do
     Enum.reduce(state.workers, {:ok, state, 0}, fn
-      {ref, %{task_pid: task_pid, task_name: ^task_name}}, {:ok, state, number_killed} ->
-        state = shutdown_and_cleanup(state, ref, task_pid, exception)
+      {ref, %{task: task, task_name: ^task_name}}, {:ok, state, number_killed} ->
+        state = shutdown_and_cleanup(state, ref, task, exception)
         {:ok, state, number_killed + 1}
 
       {ref, %{delegated_to: pool, task_name: ^task_name}}, {:ok, state, number_killed} ->
@@ -98,8 +100,8 @@ defmodule Handler.Pool.State do
         result = Pool.kill_by_ref(pool, ref, exception)
         {:ok, state, result}
 
-      %{task_pid: task_pid} ->
-        state = shutdown_and_cleanup(state, ref, task_pid, exception)
+      %{task: task} ->
+        state = shutdown_and_cleanup(state, ref, task, exception)
         {:ok, state, :ok}
 
       nil ->
@@ -183,7 +185,7 @@ defmodule Handler.Pool.State do
   end
 
   defp kickoff_new_task(_state, fun, opts, from_pid) do
-    %Task{ref: ref, pid: pid} =
+    task =
       Task.async(fn ->
         task_opts = Keyword.drop(opts, [:delegate_param, :task_name])
         Handler.run(fun, task_opts)
@@ -192,11 +194,12 @@ defmodule Handler.Pool.State do
     worker = %{
       bytes_committed: max_heap_bytes(opts),
       from_pid: from_pid,
-      task_pid: pid,
-      task_name: task_name(opts)
+      task_pid: task.pid,
+      task_name: task_name(opts),
+      task: task
     }
 
-    {:ok, ref, worker}
+    {:ok, task.ref, worker}
   end
 
   defp commit_resources(state, ref, worker) do
@@ -223,10 +226,7 @@ defmodule Handler.Pool.State do
     end
   end
 
-  @foo_mfa {__MODULE__, :foo, 0}
-  defp shutdown_and_cleanup(state, ref, task_pid, exception) do
-    task = %Task{mfa: @foo_mfa, ref: ref, pid: task_pid, owner: self()}
-
+  defp shutdown_and_cleanup(state, ref, task, exception) do
     result =
       case Task.shutdown(task, :brutal_kill) do
         {:ok, task_result} ->
