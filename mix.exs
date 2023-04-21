@@ -1,14 +1,14 @@
 defmodule Handler.MixProject do
   use Mix.Project
 
-  @version "0.5.0"
+  @version "0.4.3"
   @source_url "https://github.com/SpiffInc/handler"
 
   def project do
     [
       app: :handler,
       version: @version,
-      elixir: "~> 1.14",
+      elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       docs: [
