@@ -26,11 +26,11 @@ jobs:
             elixir: "1.13"
           - otp: "24"
             elixir: "1.12"
-          - otp: "23.3.4.18"
+          - otp: "23"
             elixir: "1.12"
-          - otp: "24"
+          - otp: "22"
             elixir: "1.11"
-          - otp: "23.3.4.18"
+          - otp: "21"
             elixir: "1.11"
 
     steps:
