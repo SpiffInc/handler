@@ -11,23 +11,40 @@ env:
 
 jobs:
   build:
-
     name: Build and test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu20
+    strategy:
+      matrix:
+        pair:
+          - otp: "25"
+            elixir: "1.14"
+          - otp: "24"
+            elixir: "1.14"
+          - otp: "25"
+            elixir: "1.13"
+          - otp: "24"
+            elixir: "1.13"
+          - otp: "24"
+            elixir: "1.12"
+          - otp: "23.3.4.18"
+            elixir: "1.12"
+          - otp: "24"
+            elixir: "1.11"
+          - otp: "23.3.4.18"
+            elixir: "1.11"
 
     steps:
     - uses: actions/checkout@v3
     - name: Set up Elixir
       uses: erlef/setup-beam@v1
       with:
-        elixir-version: '1.14.4' # Define the elixir version [required]
-        otp-version: '25' # Define the OTP version [required]
+        elixir-version: ${{ matrix.pair.elixir }}
+        otp-version: ${{ matrix.pair.otp }}
     - name: Restore dependencies cache
       uses: actions/cache@v3
       with:
         path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-        restore-keys: ${{ runner.os }}-mix-
+        key: ${{ runner.os }}-${{ matrix.pair.elixir }}-mix-${{ hashFiles('**/mix.lock') }}
     - name: Install dependencies
       run: mix deps.get
     - name: Run tests
