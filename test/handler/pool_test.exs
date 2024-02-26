@@ -306,6 +306,45 @@ defmodule Handler.PoolTest do
     assert {:ok, 0} = Pool.flush(pool)
   end
 
+  test "the GenServer.call time for a Pool can be adjusted" do
+    config = %Pool{
+      max_workers: 10,
+      max_memory_bytes: 1024 * 1024
+    }
+
+    {:ok, pool} = Pool.start_link(config)
+    fun = fn -> {:ok, self()} end
+    opts = [max_heap_bytes: 10 * 1024, max_ms: 100, pool_timeout: 10]
+    assert {:ok, worker_pid} = Pool.run(pool, fun, opts)
+    assert is_pid(worker_pid)
+    assert worker_pid != self()
+  end
+
+  # Note: the pool should always be responsive, but it's possible to have cases
+  # where your VM is totally CPU saturated and the pool just won't be scheduled
+  # within the timeout you've set
+  test "if the pool can't be contacted, a specific error is returned" do
+    defmodule FakePool do
+      use GenServer
+
+      def init(args) do
+        {:ok, args}
+      end
+
+      def handle_call(message, _from, state) do
+        :timer.sleep(100)
+        {:reply, message, state}
+      end
+    end
+
+    {:ok, fake_pool} = GenServer.start_link(FakePool, nil)
+
+    fun = fn -> :timer.sleep(60_000) end
+    opts = [max_heap_bytes: 10 * 1024, max_ms: 1_000, pool_timeout: 1]
+    assert {:reject, %Handler.Pool.Timeout{} = exception} = Pool.async(fake_pool, fun, opts)
+    assert exception.message == "Could not reach pool within 1ms"
+  end
+
   describe "composed pools" do
     test "jobs successfully delegate to the root pool" do
       {_root, composed} = setup_composed_pools()
