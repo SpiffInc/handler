@@ -19,9 +19,13 @@ defmodule Handler.Pool do
         }
   @type name :: GenServer.name()
   @type opts :: list(opt())
-  @type opt :: Handler.opt() | {:task_name, String.t()} | {:delegate_param, term()}
+  @type opt ::
+          Handler.opt()
+          | {:task_name, String.t()}
+          | {:delegate_param, term()}
+          | {:pool_timeout, Handler.milliseconds()}
   @type pool :: GenServer.server()
-  @type exception :: Pool.InsufficientMemory.t() | Pool.NoWorkersAvailable.t()
+  @type exception :: Pool.InsufficientMemory.t() | Pool.NoWorkersAvailable.t() | Pool.Timeout.t()
 
   @user_killed_process_exit Handler.ProcessExit.exception(
                               message: "User killed the process",
@@ -65,12 +69,16 @@ defmodule Handler.Pool do
   @spec async(pool(), (() -> any()), opts()) :: {:ok, reference()} | {:reject, exception}
   def async(pool, fun, opts) do
     validate_pool_opts!(opts)
+    timeout = Keyword.get(opts, :pool_timeout, 1_000)
 
     try do
-      GenServer.call(pool, {:run, fun, opts}, 1_000)
+      GenServer.call(pool, {:run, fun, opts}, timeout)
     catch
       :exit, {:noproc, _} ->
         {:reject, NoWorkersAvailable.exception(message: "No Pools Available")}
+
+      :exit, {:timeout, {GenServer, :call, _args}} ->
+        {:reject, Pool.Timeout.exception(message: "Could not reach pool within #{timeout}ms")}
     end
   end
 
@@ -95,8 +103,6 @@ defmodule Handler.Pool do
   @spec run(pool(), (() -> any()), opts()) ::
           any() | {:error, Handler.exception()} | {:reject, exception()}
   def run(pool, fun, opts) do
-    validate_pool_opts!(opts)
-
     with {:ok, ref} <- async(pool, fun, opts) do
       await(ref)
     end

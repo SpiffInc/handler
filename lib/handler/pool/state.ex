@@ -187,7 +187,7 @@ defmodule Handler.Pool.State do
   defp kickoff_new_task(_state, fun, opts, from_pid) do
     task =
       Task.async(fn ->
-        task_opts = Keyword.drop(opts, [:delegate_param, :task_name])
+        task_opts = Keyword.drop(opts, [:delegate_param, :task_name, :pool_timeout])
         Handler.run(fun, task_opts)
       end)
 

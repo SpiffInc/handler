@@ -53,6 +53,8 @@ defmodule Handler.Opts do
   defp validate_pool_opt!({:max_heap_bytes, number}) when is_integer(number) and number > 0,
     do: :ok
 
+  defp validate_pool_opt!({:pool_timeout, number}) when is_integer(number) and number > 0, do: :ok
+
   defp validate_pool_opt!({:task_name, _name}), do: :ok
 
   defp validate_pool_opt!(other) do
